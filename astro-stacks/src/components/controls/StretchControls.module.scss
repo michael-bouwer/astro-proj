@@ -1,0 +1,38 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.78rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+}
+
+.sliderLabelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sliderValue {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.hint {
+  font-size: 0.72rem;
+  color: var(--chakra-colors-fg-muted);
+}

@@ -1,0 +1,14 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--chakra-colors-border);
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.tabList {
+  display: flex;
+  border-bottom: 1px solid var(--chakra-colors-border);
+  padding: 0 8px;
+  flex-shrink: 0;
+}

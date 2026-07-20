@@ -1,0 +1,31 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Frontend (astro-stacks/ has its own .gitignore too, kept for a monorepo-wide `git add .`)
+node_modules/
+dist/
+dist-ssr/
+
+# Rust / Tauri build output
+astro-stacks/src-tauri/target/
+
+# Pipeline output written into dataset directories
+master_linear.npy
+export.tiff
+
+# Workspace runtime data (per-workspace stacked masters, saved versions) -- user
+# data, not app source
+astro-stacks/workspaces/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.DS_Store
+
+# Stacking datasets (these are sometimes quite large, so commit the directory but not the contents)
+stacking_datasets/*

@@ -1,0 +1,23 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+}
+
+.status {
+  padding: 24px;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.error {
+  padding: 24px;
+  color: var(--chakra-colors-red-fg);
+}

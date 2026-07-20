@@ -1,0 +1,58 @@
+.bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--chakra-colors-border);
+  background: var(--chakra-colors-bg-panel);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 2px solid transparent;
+  color: var(--chakra-colors-fg-muted);
+  white-space: nowrap;
+  font-size: 0.85rem;
+  max-width: 220px;
+}
+
+.tabActive {
+  color: var(--chakra-colors-fg);
+  border-bottom-color: var(--chakra-colors-brand-solid);
+}
+
+.homeTab {
+  border: none;
+  background: none;
+  padding: 0 14px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tabLabel {
+  background: none;
+  border: none;
+  padding: 9px 4px 9px 14px;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  min-width: 0;
+}
+
+.tabClose {
+  flex-shrink: 0;
+  margin-right: 4px;
+  opacity: 0.6;
+
+  &:hover {
+    opacity: 1;
+  }
+}

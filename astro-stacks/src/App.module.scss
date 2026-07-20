@@ -1,0 +1,12 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+// Inactive tabs stay mounted (not unmounted) so a running stack job keeps
+// polling in the background -- only visibility toggles.
+.panelHidden {
+  display: none;
+}

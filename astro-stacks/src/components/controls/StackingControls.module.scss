@@ -1,0 +1,65 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.78rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.infoText {
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  background: var(--chakra-colors-bg-subtle);
+  border-radius: 6px;
+  color: var(--chakra-colors-fg);
+}
+
+.sliderLabelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sliderValue {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.runButton {
+  margin-top: 4px;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+}
+
+.progressLine {
+  font-weight: 600;
+}
+
+.progressMessage {
+  color: var(--chakra-colors-fg-muted);
+}
+
+.progressError {
+  color: var(--chakra-colors-red-fg);
+}

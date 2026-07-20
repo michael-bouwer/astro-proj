@@ -1,0 +1,26 @@
+.bar {
+  display: flex;
+  gap: 24px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--chakra-colors-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.statValue {
+  font-size: 1rem;
+  font-weight: 600;
+}
