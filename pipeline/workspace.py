@@ -58,12 +58,17 @@ def frame_counts(source_path):
     return {kind: len(raw_io.list_frames(os.path.join(source_path, kind))) for kind in FRAME_KINDS}
 
 
-def create_workspace(name, source_path):
+def _validate_source_path(source_path):
     source_path = os.path.abspath(source_path)
     if not os.path.isdir(source_path):
         raise ValueError(f"Not a directory: {source_path}")
     if not os.path.isdir(os.path.join(source_path, "lights")):
         raise ValueError(f"'{source_path}' has no lights/ subfolder")
+    return source_path
+
+
+def create_workspace(name, source_path):
+    source_path = _validate_source_path(source_path)
 
     workspace_id = str(uuid.uuid4())
     os.makedirs(_workspace_dir(workspace_id))
@@ -91,6 +96,23 @@ def get_workspace(workspace_id):
     workspace = _load_workspace_raw(workspace_id)
     workspace["frame_counts"] = frame_counts(workspace["source_path"])
     workspace["has_master"] = os.path.isfile(os.path.join(_workspace_dir(workspace_id), LINEAR_MASTER_FILENAME))
+    return workspace
+
+
+def update_workspace(workspace_id, name=None, source_path=None):
+    """Updates a workspace's name and/or source_path -- e.g. after the frames
+    folder has been moved. Runs the same validation as create_workspace on any
+    new source_path.
+    """
+    workspace = _load_workspace_raw(workspace_id)
+
+    if source_path is not None:
+        workspace["source_path"] = _validate_source_path(source_path)
+    if name is not None:
+        workspace["name"] = name
+
+    workspace["updated_at"] = _now()
+    _write_json(_workspace_json_path(workspace_id), workspace)
     return workspace
 
 

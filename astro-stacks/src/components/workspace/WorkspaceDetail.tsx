@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Text } from "@chakra-ui/react";
-import { ApiError, getJobStatus, getWorkspace, loadMaster, runPipeline } from "../../api/client";
-import type { JobStatus, RunParams, RunResult, StretchParams, Version, Workspace } from "../../api/types";
+import { ApiError, deleteWorkspace, getJobStatus, getWorkspace, loadMaster, runPipeline } from "../../api/client";
+import type {
+  JobStatus,
+  RunParams,
+  RunResult,
+  StretchParams,
+  TransformParams,
+  Version,
+  Workspace,
+} from "../../api/types";
 import { FramePanel } from "../frames/FramePanel";
 import { PreviewPanel } from "../preview/PreviewPanel";
 import { ControlsPanel } from "../controls/ControlsPanel";
 import { VersionHistoryDrawer } from "../versions/VersionHistoryDrawer";
 import { SaveVersionDialog } from "../versions/SaveVersionDialog";
+import { ConfirmDialog } from "../common/ConfirmDialog";
+import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import styles from "./WorkspaceDetail.module.scss";
 
@@ -25,13 +35,30 @@ const DEFAULT_STRETCH_PARAMS: StretchParams = {
   shadow_clip: -2.8,
 };
 
-export function WorkspaceDetail({ workspaceId }: { workspaceId: string }) {
+const DEFAULT_TRANSFORM_PARAMS: TransformParams = {
+  rotationDeg: 0,
+  crop: null,
+};
+
+export function WorkspaceDetail({
+  workspaceId,
+  onDeleted,
+  onRenamed,
+}: {
+  workspaceId: string;
+  onDeleted: () => void;
+  onRenamed: (workspace: Workspace) => void;
+}) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [error, setError] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const [runParams, setRunParams] = useState<RunParams>(DEFAULT_RUN_PARAMS);
   const [lastCompletedRunParams, setLastCompletedRunParams] = useState<RunParams | null>(null);
   const [stretchParams, setStretchParams] = useState<StretchParams>(DEFAULT_STRETCH_PARAMS);
+  const [transformParams, setTransformParams] = useState<TransformParams>(DEFAULT_TRANSFORM_PARAMS);
+  const [activeControlsTab, setActiveControlsTab] = useState("stacking");
 
   const [job, setJob] = useState<JobStatus | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
@@ -129,6 +156,8 @@ export function WorkspaceDetail({ workspaceId }: { workspaceId: string }) {
         onOpenHistory={() => setHistoryOpen(true)}
         onSaveVersion={() => setSaveOpen(true)}
         saveDisabled={!masterLoaded}
+        onEdit={() => setEditOpen(true)}
+        onDelete={() => setDeleteConfirmOpen(true)}
       />
 
       <div className={styles.body}>
@@ -137,6 +166,9 @@ export function WorkspaceDetail({ workspaceId }: { workspaceId: string }) {
           workspaceId={workspaceId}
           masterLoaded={masterLoaded}
           stretchParams={stretchParams}
+          transformParams={transformParams}
+          onTransformParamsChange={setTransformParams}
+          showCropOverlay={activeControlsTab === "crop"}
           previewVersion={previewVersion}
           runResult={runResult}
           job={job}
@@ -149,6 +181,10 @@ export function WorkspaceDetail({ workspaceId }: { workspaceId: string }) {
           job={job}
           stretchParams={stretchParams}
           onStretchParamsChange={setStretchParams}
+          transformParams={transformParams}
+          onTransformParamsChange={setTransformParams}
+          activeTab={activeControlsTab}
+          onActiveTabChange={setActiveControlsTab}
         />
       </div>
 
@@ -158,8 +194,33 @@ export function WorkspaceDetail({ workspaceId }: { workspaceId: string }) {
         onClose={() => setSaveOpen(false)}
         workspaceId={workspaceId}
         stretchParams={stretchParams}
+        transformParams={transformParams}
         runParams={lastCompletedRunParams}
         onSaved={handleVersionSaved}
+      />
+
+      <CreateWorkspaceDialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        editingWorkspace={workspace}
+        onSaved={(updated) => {
+          setWorkspace(updated);
+          onRenamed(updated);
+          setEditOpen(false);
+        }}
+      />
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Delete workspace?"
+        message={`This removes "${workspace.name}" and all its saved versions. The source frames folder itself is not touched.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={async () => {
+          await deleteWorkspace(workspaceId);
+          setDeleteConfirmOpen(false);
+          onDeleted();
+        }}
+        onCancel={() => setDeleteConfirmOpen(false)}
       />
     </div>
   );

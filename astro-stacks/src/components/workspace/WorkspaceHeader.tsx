@@ -7,11 +7,15 @@ export function WorkspaceHeader({
   onOpenHistory,
   onSaveVersion,
   saveDisabled,
+  onEdit,
+  onDelete,
 }: {
   workspace: Workspace;
   onOpenHistory: () => void;
   onSaveVersion: () => void;
   saveDisabled: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div className={styles.header}>
@@ -20,6 +24,12 @@ export function WorkspaceHeader({
         <Text className={styles.path}>{workspace.source_path}</Text>
       </div>
       <div className={styles.actions}>
+        <Button variant="ghost" onClick={onEdit}>
+          Edit
+        </Button>
+        <Button variant="ghost" colorPalette="red" onClick={onDelete}>
+          Delete
+        </Button>
         <Button variant="outline" onClick={onOpenHistory}>
           History
         </Button>

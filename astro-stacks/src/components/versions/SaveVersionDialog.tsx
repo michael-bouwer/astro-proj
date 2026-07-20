@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Checkbox, Dialog, Portal, Text, Textarea } from "@chakra-ui/react";
 import { ApiError, saveVersion } from "../../api/client";
-import type { RunParams, SaveVersionParams, StretchParams, Version } from "../../api/types";
+import type { RunParams, SaveVersionParams, StretchParams, TransformParams, Version } from "../../api/types";
 import styles from "./SaveVersionDialog.module.scss";
 
 export function SaveVersionDialog({
@@ -9,6 +9,7 @@ export function SaveVersionDialog({
   onClose,
   workspaceId,
   stretchParams,
+  transformParams,
   runParams,
   onSaved,
 }: {
@@ -16,6 +17,7 @@ export function SaveVersionDialog({
   onClose: () => void;
   workspaceId: string;
   stretchParams: StretchParams;
+  transformParams: TransformParams;
   runParams: RunParams | null;
   onSaved: (version: Version) => void;
 }) {
@@ -39,6 +41,15 @@ export function SaveVersionDialog({
         note: note.trim(),
         fix_halos: fixHalos,
         ...(runParams ?? {}),
+        rotation: transformParams.rotationDeg,
+        ...(transformParams.crop
+          ? {
+              crop_x: transformParams.crop.x,
+              crop_y: transformParams.crop.y,
+              crop_width: transformParams.crop.width,
+              crop_height: transformParams.crop.height,
+            }
+          : {}),
       };
       const version = await saveVersion(workspaceId, params);
       setNote("");
@@ -58,8 +69,9 @@ export function SaveVersionDialog({
           <Dialog.Content className={styles.content}>
             <Dialog.Title>Save version</Dialog.Title>
             <Text className={styles.hint}>
-              Records the current stretch ({stretchParams.method}) as a new version with your note -- useful for
-              tracking what changed between iterations.
+              Records the current stretch ({stretchParams.method})
+              {(transformParams.rotationDeg !== 0 || transformParams.crop) && " and crop/rotation"} as a new version
+              with your note -- useful for tracking what changed between iterations.
             </Text>
             <Textarea
               value={note}

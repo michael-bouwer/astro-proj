@@ -1,0 +1,69 @@
+// Positions here are driven by live drag state (percentages computed from
+// normalized crop coordinates), so the box/handles/scrim use the `style` prop
+// for position/size -- SCSS can't express a value that changes on every
+// pointermove. Colors and fixed sizing stay in this file.
+
+.container {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.scrim {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.box {
+  position: absolute;
+  border: 1.5px solid white;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  cursor: move;
+}
+
+.handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: white;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.handleNw {
+  cursor: nwse-resize;
+}
+.handleSe {
+  cursor: nwse-resize;
+}
+.handleNe {
+  cursor: nesw-resize;
+}
+.handleSw {
+  cursor: nesw-resize;
+}
+
+.rotateHandle {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--chakra-colors-brand-solid);
+  border: 2px solid white;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.rotateIcon {
+  width: 16px;
+  height: 16px;
+  color: white;
+}

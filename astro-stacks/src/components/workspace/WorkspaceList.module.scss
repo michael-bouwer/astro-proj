@@ -46,6 +46,7 @@
   border: 1px solid var(--chakra-colors-border);
   border-radius: 10px;
   padding: 16px;
+  padding-top: 42px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -76,10 +77,16 @@
 .badge {
   position: absolute;
   top: 12px;
-  right: 12px;
+  left: 12px;
   font-size: 0.7rem;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--chakra-colors-brand-subtle);
-  color: var(--chakra-colors-brand-fg);
+}
+
+.cardActions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
 }

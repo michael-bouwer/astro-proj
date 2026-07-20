@@ -32,8 +32,16 @@ export function TabBar({
       </button>
 
       {tabs.map((tab) => (
-        <div key={tab.workspaceId} className={`${styles.tab} ${activeTabId === tab.workspaceId ? styles.tabActive : ""}`}>
-          <button type="button" className={styles.tabLabel} onClick={() => onSelect(tab.workspaceId)} title={tab.name}>
+        <div
+          key={tab.workspaceId}
+          className={`${styles.tab} ${activeTabId === tab.workspaceId ? styles.tabActive : ""}`}
+        >
+          <button
+            type="button"
+            className={styles.tabLabel}
+            onClick={() => onSelect(tab.workspaceId)}
+            title={tab.name}
+          >
             {tab.name}
           </button>
           <CloseButton

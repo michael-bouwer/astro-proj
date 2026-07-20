@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
-from pipeline import alignment, calibration, color, halos, orchestrator, raw_io, stretch
+from pipeline import alignment, calibration, color, halos, orchestrator, raw_io, stretch, transform
 from tests.conftest import make_bias_frame, make_dark_frame, make_flat_frame, make_light_frame, _rng
 
 
@@ -242,3 +242,66 @@ def test_load_quick_preview_leaves_small_images_unscaled(synthetic_dataset):
     preview = raw_io.load_quick_preview(light_path, max_dimension=100000)
 
     assert preview.shape == full.shape
+
+
+def test_rotate_zero_degrees_is_a_noop():
+    rng = _rng()
+    img = make_light_frame(rng).astype(np.float32)
+    rotated = transform.rotate(img, 0)
+    assert rotated is img  # short-circuited, not just equal
+
+
+def test_rotate_preserves_shape_and_visibly_changes_content():
+    rng = _rng()
+    img = make_light_frame(rng).astype(np.float32)
+    rotated = transform.rotate(img, 45)
+    assert rotated.shape == img.shape
+    assert not np.array_equal(rotated, img)
+
+
+def test_rotate_180_is_a_point_reflection():
+    img = np.zeros((40, 60, 3), dtype=np.float32)
+    img[5, 5] = [1.0, 1.0, 1.0]  # near top-left corner
+    rotated = transform.rotate(img, 180)
+    # should now land near the bottom-right corner instead
+    assert rotated[-6:-4, -6:-4].max() > 0.5
+    assert rotated[5, 5].max() < 0.1
+
+
+def test_crop_extracts_expected_pixel_region():
+    img = np.zeros((100, 200, 3), dtype=np.float32)
+    img[25:75, 50:150] = 1.0  # a known bright rectangle
+
+    cropped = transform.crop(img, x=0.25, y=0.25, width=0.5, height=0.5)
+
+    assert cropped.shape == (50, 100, 3)
+    assert cropped.min() == 1.0  # the bright rectangle exactly fills the crop
+
+
+def test_crop_clamps_to_image_bounds():
+    img = np.zeros((100, 100, 3), dtype=np.float32)
+    cropped = transform.crop(img, x=0.8, y=0.8, width=0.5, height=0.5)  # overshoots past 1.0
+    assert cropped.shape == (20, 20, 3)
+
+
+def test_crop_raises_on_empty_rectangle():
+    img = np.zeros((100, 100, 3), dtype=np.float32)
+    with pytest.raises(ValueError, match="empty"):
+        transform.crop(img, x=1.5, y=0, width=0.1, height=0.1)  # entirely outside bounds
+
+
+def test_apply_composes_rotate_then_crop():
+    rng = _rng()
+    img = make_light_frame(rng).astype(np.float32)
+
+    rotated_only = transform.rotate(img, 10)
+    composed = transform.apply(img, rotation_deg=10, crop_rect={"x": 0.1, "y": 0.1, "width": 0.5, "height": 0.5})
+
+    expected = transform.crop(rotated_only, x=0.1, y=0.1, width=0.5, height=0.5)
+    assert np.array_equal(composed, expected)
+
+
+def test_apply_with_no_rotation_or_crop_returns_input_unchanged():
+    rng = _rng()
+    img = make_light_frame(rng).astype(np.float32)
+    assert transform.apply(img) is img

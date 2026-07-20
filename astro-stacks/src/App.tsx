@@ -14,14 +14,16 @@ function App() {
     setOpenTabs((prev) =>
       prev.some((tab) => tab.workspaceId === workspace.id)
         ? prev
-        : [...prev, { workspaceId: workspace.id, name: workspace.name }]
+        : [...prev, { workspaceId: workspace.id, name: workspace.name }],
     );
     setActiveTabId(workspace.id);
   };
 
   const closeTab = (workspaceId: string) => {
     setOpenTabs((prev) => {
-      const closingIndex = prev.findIndex((tab) => tab.workspaceId === workspaceId);
+      const closingIndex = prev.findIndex(
+        (tab) => tab.workspaceId === workspaceId,
+      );
       const next = prev.filter((tab) => tab.workspaceId !== workspaceId);
 
       if (activeTabId === workspaceId) {
@@ -31,6 +33,16 @@ function App() {
 
       return next;
     });
+  };
+
+  const renameTab = (workspace: Workspace) => {
+    setOpenTabs((prev) =>
+      prev.map((tab) =>
+        tab.workspaceId === workspace.id
+          ? { ...tab, name: workspace.name }
+          : tab,
+      ),
+    );
   };
 
   return (
@@ -48,12 +60,26 @@ function App() {
       }
     >
       <div className={activeTabId === null ? styles.panel : styles.panelHidden}>
-        <WorkspaceList active={activeTabId === null} onOpenWorkspace={openWorkspace} />
+        <WorkspaceList
+          active={activeTabId === null}
+          onOpenWorkspace={openWorkspace}
+          onWorkspaceDeleted={closeTab}
+          onWorkspaceRenamed={renameTab}
+        />
       </div>
 
       {openTabs.map((tab) => (
-        <div key={tab.workspaceId} className={activeTabId === tab.workspaceId ? styles.panel : styles.panelHidden}>
-          <WorkspaceDetail workspaceId={tab.workspaceId} />
+        <div
+          key={tab.workspaceId}
+          className={
+            activeTabId === tab.workspaceId ? styles.panel : styles.panelHidden
+          }
+        >
+          <WorkspaceDetail
+            workspaceId={tab.workspaceId}
+            onDeleted={() => closeTab(tab.workspaceId)}
+            onRenamed={renameTab}
+          />
         </div>
       ))}
     </AppShell>

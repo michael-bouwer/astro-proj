@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from pipeline import color, halos, orchestrator, raw_io, stretch, workspace
+from pipeline import color, halos, orchestrator, raw_io, stretch, transform, workspace
 
 app = FastAPI()
 
@@ -28,9 +28,24 @@ def _workspace_or_404(workspace_id):
         raise HTTPException(status_code=404, detail=f"Unknown workspace: {workspace_id}")
 
 
+def _crop_rect(x, y, width, height):
+    """Builds the crop_rect dict transform.apply expects, or None if the crop
+    is unset (all four coordinates come from one query/body, so partial values
+    would be a bug on the caller's side -- only treat "all None" as "no crop").
+    """
+    if x is None and y is None and width is None and height is None:
+        return None
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
 class CreateWorkspaceRequest(BaseModel):
     name: str
     source_path: str
+
+
+class UpdateWorkspaceRequest(BaseModel):
+    name: str | None = None
+    source_path: str | None = None
 
 
 class WorkspaceRunRequest(BaseModel):
@@ -56,6 +71,13 @@ class SaveVersionRequest(BaseModel):
     apply_dark: bool | None = None
     apply_flat: bool | None = None
     integration_method: str | None = None
+    # Non-destructive crop/rotate, applied on top of the linear master before
+    # stretching -- never baked into master_linear.npy, same as everything else here.
+    rotation: float = 0.0
+    crop_x: float | None = None
+    crop_y: float | None = None
+    crop_width: float | None = None
+    crop_height: float | None = None
 
 
 @app.get("/")
@@ -80,6 +102,16 @@ def list_workspaces():
 @app.get("/workspaces/{workspace_id}")
 def get_workspace(workspace_id: str):
     return _workspace_or_404(workspace_id)
+
+
+@app.patch("/workspaces/{workspace_id}")
+def update_workspace(workspace_id: str, req: UpdateWorkspaceRequest):
+    _workspace_or_404(workspace_id)
+    try:
+        updated = workspace.update_workspace(workspace_id, name=req.name, source_path=req.source_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return workspace.get_workspace(updated["id"])
 
 
 @app.delete("/workspaces/{workspace_id}")
@@ -161,14 +193,24 @@ def workspace_preview(
     scale: float = 1000.0,
     target_bkg: float = 0.25,
     shadow_clip: float = -2.8,
+    rotation: float = 0.0,
+    crop_x: float | None = None,
+    crop_y: float | None = None,
+    crop_width: float | None = None,
+    crop_height: float | None = None,
 ):
     _workspace_or_404(workspace_id)
     master = loaded_masters.get(workspace_id)
     if master is None:
         raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
 
+    try:
+        transformed = transform.apply(master, rotation, _crop_rect(crop_x, crop_y, crop_width, crop_height))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     preview_u8 = stretch.to_uint8(
-        master, method=method, midtone=midtone, scale=scale, target_bkg=target_bkg, shadow_clip=shadow_clip
+        transformed, method=method, midtone=midtone, scale=scale, target_bkg=target_bkg, shadow_clip=shadow_clip
     )
     return Response(content=raw_io.encode_jpeg(preview_u8), media_type="image/jpeg")
 
@@ -196,8 +238,14 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
     if master is None:
         raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
 
+    try:
+        crop_rect = _crop_rect(req.crop_x, req.crop_y, req.crop_width, req.crop_height)
+        transformed = transform.apply(master, req.rotation, crop_rect)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     stretched_u16 = stretch.to_uint16(
-        master,
+        transformed,
         method=req.method,
         midtone=req.midtone,
         scale=req.scale,
@@ -209,7 +257,7 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
 
     thumbnail_u8 = (stretched_u16 // 256).astype("uint8")
     params = req.model_dump()
-    stats = {"snr_db": color.estimate_snr(master)}
+    stats = {"snr_db": color.estimate_snr(transformed)}
 
     return workspace.save_version(workspace_id, req.note, params, stats, stretched_u16, thumbnail_u8)
 

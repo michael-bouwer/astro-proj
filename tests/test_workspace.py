@@ -31,6 +31,44 @@ def test_create_and_get_workspace(synthetic_dataset, isolated_workspaces_root):
     assert fetched["has_master"] is False
 
 
+def test_update_workspace_changes_source_path(synthetic_dataset, tmp_path, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+
+    moved = tmp_path / "moved_dataset"
+    moved.mkdir()
+    (moved / "lights").mkdir()
+
+    updated = workspace.update_workspace(created["id"], source_path=str(moved))
+    assert updated["source_path"] == str(moved)
+
+    fetched = workspace.get_workspace(created["id"])
+    assert fetched["source_path"] == str(moved)
+
+
+def test_update_workspace_changes_name_only(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Original", str(synthetic_dataset))
+    updated = workspace.update_workspace(created["id"], name="Renamed")
+    assert updated["name"] == "Renamed"
+    assert updated["source_path"] == str(synthetic_dataset)
+
+
+def test_update_workspace_rejects_missing_lights_subfolder(synthetic_dataset, tmp_path, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    bad_dir = tmp_path / "no_lights_here"
+    bad_dir.mkdir()
+
+    with pytest.raises(ValueError, match="lights"):
+        workspace.update_workspace(created["id"], source_path=str(bad_dir))
+
+    # original path must be untouched after a failed update
+    assert workspace.get_workspace(created["id"])["source_path"] == str(synthetic_dataset)
+
+
+def test_update_workspace_unknown_id_raises_keyerror(isolated_workspaces_root):
+    with pytest.raises(KeyError):
+        workspace.update_workspace("does-not-exist", name="Whatever")
+
+
 def test_first_light_frame_returns_sorted_first_path(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
     expected = sorted((synthetic_dataset / "lights").glob("*.png"))[0]

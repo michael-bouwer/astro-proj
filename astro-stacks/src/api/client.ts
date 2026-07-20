@@ -2,6 +2,7 @@ import type {
   JobStatus,
   RunParams,
   SaveVersionParams,
+  TransformParams,
   Version,
   Workspace,
   WorkspaceFrames,
@@ -41,6 +42,13 @@ export function getWorkspace(workspaceId: string): Promise<Workspace> {
   return request(`/workspaces/${workspaceId}`);
 }
 
+export function updateWorkspace(
+  workspaceId: string,
+  updates: { name?: string; source_path?: string }
+): Promise<Workspace> {
+  return request(`/workspaces/${workspaceId}`, { method: "PATCH", body: JSON.stringify(updates) });
+}
+
 export function deleteWorkspace(workspaceId: string): Promise<{ status: string }> {
   return request(`/workspaces/${workspaceId}`, { method: "DELETE" });
 }
@@ -67,7 +75,8 @@ export function loadMaster(workspaceId: string): Promise<{ status: string }> {
 export function previewUrl(
   workspaceId: string,
   params: { method: string; midtone: number; scale: number; target_bkg: number; shadow_clip: number },
-  cacheBust: number
+  cacheBust: number,
+  transform?: TransformParams
 ): string {
   const query = new URLSearchParams({
     method: params.method,
@@ -77,6 +86,15 @@ export function previewUrl(
     shadow_clip: String(params.shadow_clip),
     t: String(cacheBust),
   });
+  if (transform) {
+    query.set("rotation", String(transform.rotationDeg));
+    if (transform.crop) {
+      query.set("crop_x", String(transform.crop.x));
+      query.set("crop_y", String(transform.crop.y));
+      query.set("crop_width", String(transform.crop.width));
+      query.set("crop_height", String(transform.crop.height));
+    }
+  }
   return `${API_BASE}/workspaces/${workspaceId}/preview?${query.toString()}`;
 }
 

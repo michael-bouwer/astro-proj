@@ -66,6 +66,20 @@ export type StretchParams = {
   shadow_clip: number;
 };
 
+// Normalized [0,1] fractions of the (rotated) image -- resolution-independent
+// between the small preview JPEG and the full-res master.
+export type CropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type TransformParams = {
+  rotationDeg: number;
+  crop: CropRect | null;
+};
+
 export type SaveVersionParams = StretchParams & {
   note: string;
   fix_halos: boolean;
@@ -76,6 +90,12 @@ export type SaveVersionParams = StretchParams & {
   apply_dark?: boolean;
   apply_flat?: boolean;
   integration_method?: IntegrationMethod;
+  // Non-destructive crop/rotate applied on top of the linear master.
+  rotation: number;
+  crop_x?: number;
+  crop_y?: number;
+  crop_width?: number;
+  crop_height?: number;
 };
 
 export type VersionStats = {

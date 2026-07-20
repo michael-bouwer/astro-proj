@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Dialog, Input, Portal, Text } from "@chakra-ui/react";
-import { ApiError, createWorkspace } from "../../api/client";
+import { ApiError, createWorkspace, updateWorkspace } from "../../api/client";
 import type { Workspace } from "../../api/types";
 import styles from "./CreateWorkspaceDialog.module.scss";
 
@@ -15,25 +15,33 @@ async function pickFolderNative(): Promise<string | null> {
 export function CreateWorkspaceDialog({
   open,
   onClose,
+  editingWorkspace,
   onCreated,
+  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (workspace: Workspace) => void;
+  /** When set, the dialog edits this workspace's name/path instead of creating a new one. */
+  editingWorkspace?: Workspace | null;
+  onCreated?: (workspace: Workspace) => void;
+  onSaved?: (workspace: Workspace) => void;
 }) {
+  const isEditing = !!editingWorkspace;
   const [name, setName] = useState("");
   const [sourcePath, setSourcePath] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const reset = () => {
-    setName("");
-    setSourcePath("");
-    setError("");
-  };
+  useEffect(() => {
+    if (open) {
+      setName(editingWorkspace?.name ?? "");
+      setSourcePath(editingWorkspace?.source_path ?? "");
+      setError("");
+    }
+  }, [open, editingWorkspace]);
 
   const handleClose = () => {
-    reset();
+    setError("");
     onClose();
   };
 
@@ -46,7 +54,7 @@ export function CreateWorkspaceDialog({
     }
   };
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!name.trim() || !sourcePath.trim()) {
       setError("Name and folder are both required.");
       return;
@@ -54,11 +62,18 @@ export function CreateWorkspaceDialog({
     setSubmitting(true);
     setError("");
     try {
-      const workspace = await createWorkspace(name.trim(), sourcePath.trim());
-      reset();
-      onCreated(workspace);
+      if (isEditing) {
+        const workspace = await updateWorkspace(editingWorkspace!.id, {
+          name: name.trim(),
+          source_path: sourcePath.trim(),
+        });
+        onSaved?.(workspace);
+      } else {
+        const workspace = await createWorkspace(name.trim(), sourcePath.trim());
+        onCreated?.(workspace);
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create workspace");
+      setError(err instanceof ApiError ? err.message : `Failed to ${isEditing ? "save" : "create"} workspace`);
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +85,7 @@ export function CreateWorkspaceDialog({
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Positioner className={styles.positioner}>
           <Dialog.Content className={styles.content}>
-            <Dialog.Title>New workspace</Dialog.Title>
+            <Dialog.Title>{isEditing ? "Edit workspace" : "New workspace"}</Dialog.Title>
 
             <div className={styles.field}>
               <Text className={styles.label}>Name</Text>
@@ -105,8 +120,8 @@ export function CreateWorkspaceDialog({
               <Button variant="ghost" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button colorPalette="brand" onClick={handleCreate} loading={submitting}>
-                Create
+              <Button colorPalette="brand" onClick={handleSubmit} loading={submitting}>
+                {isEditing ? "Save" : "Create"}
               </Button>
             </div>
           </Dialog.Content>
