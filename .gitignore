@@ -27,5 +27,10 @@ astro-stacks/workspaces/
 .idea
 .DS_Store
 
+# Claude Code: per-user tool-permission cache (absolute local paths, PIDs, ports --
+# not meaningful to anyone else). .claude/launch.json stays tracked (shared dev
+# server config for the Browser preview tool).
+.claude/settings.local.json
+
 # Stacking datasets (these are sometimes quite large, so commit the directory but not the contents)
 stacking_datasets/*
