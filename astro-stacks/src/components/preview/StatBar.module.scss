@@ -1,10 +1,27 @@
 .bar {
   display: flex;
-  gap: 24px;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--chakra-colors-border);
   flex-shrink: 0;
+}
+
+.statRow {
+  display: flex;
+  gap: 24px;
   flex-wrap: wrap;
+}
+
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.warning {
+  font-size: 0.8rem;
+  color: var(--chakra-colors-orange-fg);
 }
 
 .stat {

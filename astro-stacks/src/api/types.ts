@@ -49,6 +49,11 @@ export type RunResult = {
   snr_db: number | null;
   width: number;
   height: number;
+  // Non-fatal data-quality issues found while building the bias/dark/flat
+  // masters (e.g. a channel saturated in the source frames) -- the run still
+  // completes, but calibration couldn't fully correct for it. See
+  // pipeline/calibration.py's clipped_channels.
+  calibration_warnings: string[];
 };
 
 export type JobStatusValue = "queued" | "running" | "done" | "error";

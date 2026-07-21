@@ -22,13 +22,24 @@ export function StatBar({ runResult }: { runResult: RunResult | null }) {
 
   return (
     <div className={styles.bar}>
-      <Stat label="Stacked" value={`${runResult.stacked_frame_count} / ${runResult.light_frame_count}`} />
-      <Stat label="Failed to align" value={String(runResult.rejected_frame_count)} />
-      {runResult.quality_rejected_count > 0 && (
-        <Stat label="Rejected for quality" value={String(runResult.quality_rejected_count)} />
+      <div className={styles.statRow}>
+        <Stat label="Stacked" value={`${runResult.stacked_frame_count} / ${runResult.light_frame_count}`} />
+        <Stat label="Failed to align" value={String(runResult.rejected_frame_count)} />
+        {runResult.quality_rejected_count > 0 && (
+          <Stat label="Rejected for quality" value={String(runResult.quality_rejected_count)} />
+        )}
+        <Stat label="SNR estimate" value={runResult.snr_db !== null ? `${runResult.snr_db.toFixed(1)} dB` : "n/a"} />
+        <Stat label="Integration" value={INTEGRATION_LABELS[runResult.integration_method]} />
+      </div>
+      {runResult.calibration_warnings.length > 0 && (
+        <div className={styles.warnings}>
+          {runResult.calibration_warnings.map((warning) => (
+            <Text key={warning} className={styles.warning}>
+              ⚠ {warning}
+            </Text>
+          ))}
+        </div>
       )}
-      <Stat label="SNR estimate" value={runResult.snr_db !== null ? `${runResult.snr_db.toFixed(1)} dB` : "n/a"} />
-      <Stat label="Integration" value={INTEGRATION_LABELS[runResult.integration_method]} />
     </div>
   );
 }

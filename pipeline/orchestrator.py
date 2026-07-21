@@ -34,8 +34,22 @@ def _noop(stage, percent, message):
     pass
 
 
+def _clip_warning(kind, master_frame):
+    clipped = calibration.clipped_channels(master_frame)
+    if not clipped:
+        return None
+    channels = "/".join(clipped)
+    plural = "s" if len(clipped) > 1 else ""
+    return (
+        f"Master {kind} frame is saturated in the {channels} channel{plural} -- its real "
+        f"vignette/signal can't be measured there, so calibration can't correct that "
+        f"channel. Reshoot {kind}s at a lower exposure/gain so no channel clips."
+    )
+
+
 def build_calibration_masters(dataset_dir, progress_cb=None):
     progress_cb = progress_cb or _noop
+    warnings = []
 
     bias_files = raw_io.list_frames(os.path.join(dataset_dir, "biases"))
     dark_files = raw_io.list_frames(os.path.join(dataset_dir, "darks"))
@@ -43,16 +57,28 @@ def build_calibration_masters(dataset_dir, progress_cb=None):
 
     progress_cb("calibration", 0, f"Building master bias ({len(bias_files)} frames)...")
     master_bias = calibration.build_master_frame(bias_files) if bias_files else None
+    if master_bias is not None:
+        warning = _clip_warning("bias", master_bias)
+        if warning:
+            warnings.append(warning)
 
     progress_cb("calibration", 33, f"Building master dark ({len(dark_files)} frames)...")
     master_dark = calibration.build_master_frame(dark_files) if dark_files else None
+    if master_dark is not None:
+        warning = _clip_warning("dark", master_dark)
+        if warning:
+            warnings.append(warning)
 
     progress_cb("calibration", 66, f"Building master flat ({len(flat_files)} frames)...")
     master_flat = calibration.build_master_frame(flat_files) if flat_files else None
+    if master_flat is not None:
+        warning = _clip_warning("flat", master_flat)
+        if warning:
+            warnings.append(warning)
     normalized_flat = calibration.normalize_flat(master_flat, master_bias) if master_flat is not None else None
 
     progress_cb("calibration", 100, "Calibration masters ready.")
-    return master_bias, master_dark, normalized_flat
+    return master_bias, master_dark, normalized_flat, warnings
 
 
 def run_pipeline(
@@ -83,8 +109,9 @@ def run_pipeline(
 
     need_calibration_masters = apply_dark or apply_flat
     master_bias = master_dark = normalized_flat = None
+    calibration_warnings = []
     if need_calibration_masters:
-        built_bias, built_dark, built_flat = build_calibration_masters(dataset_dir, progress_cb)
+        built_bias, built_dark, built_flat, calibration_warnings = build_calibration_masters(dataset_dir, progress_cb)
         master_bias = built_bias
         master_dark = built_dark if apply_dark else None
         normalized_flat = built_flat if apply_flat else None
@@ -94,8 +121,19 @@ def run_pipeline(
             return frame
         return calibration.calibrate_light(frame, master_bias, master_dark, normalized_flat)
 
+    # The middle file (by name, which for a single capture session is also
+    # chronological order) rather than the first: every other frame gets
+    # warped to match whichever frame is picked here, so the total rotation/
+    # shift that needs correcting -- and therefore how much of the frame the
+    # final stack loses to coverage gaps -- is minimized by picking from the
+    # middle of the session instead of an end. This matters most when a
+    # session was actually shot in two sittings with the rig repositioned in
+    # between: the first file could easily land in the smaller of the two
+    # groups, forcing the majority of frames through the larger of the two
+    # corrections instead of the minority.
+    reference_index = len(light_files) // 2
     progress_cb("reference", 0, "Loading reference frame...")
-    reference = ReferenceFrame(calibrate(raw_io.load_frame(light_files[0])))
+    reference = ReferenceFrame(calibrate(raw_io.load_frame(light_files[reference_index])))
     height, width = reference.height, reference.width
 
     mem_stack, temp_filepath = create_memmap_stack(len(light_files), height, width, 3)
@@ -109,7 +147,7 @@ def run_pipeline(
     qualities = [color.estimate_snr(reference.bgr)]
 
     try:
-        remaining = light_files[1:]
+        remaining = light_files[:reference_index] + light_files[reference_index + 1 :]
         for idx, path in enumerate(remaining, start=1):
             try:
                 frame = calibrate(raw_io.load_frame(path))
@@ -173,4 +211,5 @@ def run_pipeline(
         "snr_db": snr_db,
         "width": width,
         "height": height,
+        "calibration_warnings": calibration_warnings,
     }

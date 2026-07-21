@@ -52,6 +52,29 @@ def build_master_frame(frame_paths, progress_cb=None):
     return master
 
 
+CLIP_LEVEL = 65535  # raw_io.load_frame decodes at output_bps=16, so this is the sensor ceiling
+CLIP_FRACTION_THRESHOLD = 0.5
+
+
+def clipped_channels(master_frame, clip_level=CLIP_LEVEL, fraction_threshold=CLIP_FRACTION_THRESHOLD):
+    """Channel names (of "B", "G", "R") where at least fraction_threshold of a
+    master calibration frame's pixels sit at/above clip_level.
+
+    A channel saturated like this carries no usable spatial detail -- for a
+    flat in particular, that means its real vignette/falloff can never be
+    measured or corrected, since dividing by a uniformly-saturated channel is
+    a no-op (see normalize_flat's per-channel mean normalization above: a
+    saturated channel normalizes to ~1.0 everywhere rather than the shaped
+    correction a properly-exposed channel gets).
+    """
+    channel_names = ("B", "G", "R")
+    return [
+        name
+        for i, name in enumerate(channel_names)
+        if (master_frame[:, :, i] >= clip_level * 0.999).mean() >= fraction_threshold
+    ]
+
+
 def normalize_flat(master_flat, master_bias=None, min_relative_floor=0.05):
     if master_bias is not None:
         _require_same_shape(master_flat.shape, master_bias.shape, "master flat", "master bias")

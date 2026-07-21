@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from pipeline import alignment, calibration, color, effects, halos, orchestrator, raw_io, stretch, transform
-from tests.conftest import make_bias_frame, make_dark_frame, make_flat_frame, make_light_frame, _rng
+from tests.conftest import HEIGHT, WIDTH, make_bias_frame, make_dark_frame, make_flat_frame, make_light_frame, _rng
 
 
 def test_calibrate_light_removes_dark_and_bias_signal():
@@ -53,6 +53,25 @@ def test_normalize_flat_uses_per_channel_mean_not_shared_scalar():
     # different absolute brightness per channel
     assert np.allclose(normalized[..., 0], normalized[..., 1], atol=1e-3)
     assert np.allclose(normalized[..., 1], normalized[..., 2], atol=1e-3)
+
+
+def test_clipped_channels_detects_a_saturated_channel():
+    # Blue is uniformly at the sensor ceiling (e.g. a flat exposed too long
+    # for that channel's gain); green/red aren't.
+    frame = np.full((30, 30, 3), 30000.0, dtype=np.float32)
+    frame[:, :, 0] = 65535.0
+
+    assert calibration.clipped_channels(frame) == ["B"]
+
+
+def test_clipped_channels_ignores_a_small_bright_region():
+    # A star core saturating a handful of pixels isn't the same problem as a
+    # whole channel being blown out -- only a channel clipped over a large
+    # fraction of the frame should be flagged.
+    frame = np.full((30, 30, 3), 30000.0, dtype=np.float32)
+    frame[0:2, 0:2, :] = 65535.0
+
+    assert calibration.clipped_channels(frame) == []
 
 
 def test_calibrate_light_flat_division_does_not_blow_up_on_vignette_corner():
@@ -178,7 +197,13 @@ def test_warp_with_coverage_marks_border_fill_as_invalid():
     assert valid_mask[20:, 20:].all()  # well within the shifted-in content
 
 
-def test_defringe_star_edges_pulls_purple_ring_toward_neutral():
+def _saturation(bgr_pixel):
+    b, g, r = bgr_pixel
+    peak = max(b, g, r)
+    return (peak - min(b, g, r)) / peak if peak > 0 else 0.0
+
+
+def test_defringe_star_edges_desaturates_purple_ring_without_dimming_it():
     img = np.full((60, 60, 3), 20.0, dtype=np.float32)  # dim sky background
     img[25:35, 25:35] = [255.0, 255.0, 255.0]  # bright white star core
     for row in range(60):
@@ -189,21 +214,48 @@ def test_defringe_star_edges_pulls_purple_ring_toward_neutral():
 
     fixed = color.defringe_star_edges(img)
 
+    original = img[30, 38]
     ring_pixel = fixed[30, 38]  # inside the fringe ring, close to the core
-    assert ring_pixel[0] < 180.0 and ring_pixel[2] < 180.0  # B and R pulled down
-    assert abs(ring_pixel[0] - ring_pixel[2]) < abs(180.0 - 180.0) + 1e-6  # stays balanced
+    assert _saturation(ring_pixel) < _saturation(original)  # desaturated...
+    assert max(ring_pixel) == pytest.approx(max(original), rel=0.05)  # ...without dimming it
+
+
+def test_defringe_star_edges_leaves_blue_hue_near_a_star_untouched():
+    # Real blue reflection-nebula glow can sit right next to a bright star --
+    # the hue gate should leave it alone even though it's within the same
+    # proximity ring a magenta fringe would be caught in.
+    img = np.full((60, 60, 3), 20.0, dtype=np.float32)
+    img[25:35, 25:35] = [255.0, 255.0, 255.0]
+    for row in range(60):
+        for col in range(60):
+            dist = ((row - 30) ** 2 + (col - 30) ** 2) ** 0.5
+            if 5 < dist < 12:
+                img[row, col] = [180.0, 60.0, 40.0]  # blue-ish, not magenta (B, G, R)
+
+    fixed = color.defringe_star_edges(img)
+
+    assert np.allclose(fixed[30, 38], img[30, 38], rtol=0.02)
 
 
 def test_defringe_star_edges_leaves_distant_purple_color_untouched():
     # A magenta/purple region far from any bright star (e.g. real nebula color)
     # must not get desaturated -- only near-star fringing should be touched.
-    img = np.full((60, 60, 3), 20.0, dtype=np.float32)
-    img[25:30, 25:30] = [255.0, 255.0, 255.0]  # small bright star, top-left area
-    img[45:55, 45:55] = [150.0, 30.0, 150.0]  # magenta patch, far from the star
+    # A large canvas keeps the patch well outside the (intentionally wide,
+    # feathered) proximity reach around the star. An explicit mask isolates
+    # this from star_mask()'s own percentile threshold -- the tiny star core
+    # relative to this larger canvas would otherwise pull some of the
+    # "distant" patch's pixels into the mask too, since they'd be the
+    # second-brightest region in the image.
+    img = np.full((150, 150, 3), 20.0, dtype=np.float32)
+    img[10:15, 10:15] = [255.0, 255.0, 255.0]  # small bright star, top-left corner
+    img[120:135, 120:135] = [150.0, 30.0, 150.0]  # magenta patch, far from the star
 
-    fixed = color.defringe_star_edges(img)
+    mask = np.zeros((150, 150), dtype=np.float32)
+    mask[10:15, 10:15] = 1.0
 
-    assert np.allclose(fixed[45:55, 45:55], img[45:55, 45:55])
+    fixed = color.defringe_star_edges(img, mask=mask)
+
+    assert np.allclose(fixed[120:135, 120:135], img[120:135, 120:135])
 
 
 def test_run_pipeline_end_to_end(synthetic_dataset):
@@ -225,6 +277,38 @@ def test_run_pipeline_end_to_end(synthetic_dataset):
     # (physically impossible for 16-bit sensor data), which silently wrecked every
     # preview's global-max-based normalization.
     assert master.max() < 1e6
+    assert result["calibration_warnings"] == []
+
+
+def test_run_pipeline_warns_on_a_saturated_flat_channel(tmp_path):
+    rng = _rng()
+    for sub in ("lights", "darks", "flats", "biases"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+
+    for i in range(4):
+        cv2.imwrite(str(tmp_path / "biases" / f"bias_{i}.png"), make_bias_frame(rng))
+        cv2.imwrite(str(tmp_path / "darks" / f"dark_{i}.png"), make_dark_frame(rng))
+
+        # Same vignette as conftest.make_flat_frame, but blue is pushed to the
+        # sensor ceiling everywhere -- the real-world failure mode this is
+        # modeling: a channel exposed past clipping carries no vignette shape
+        # for calibration to measure.
+        yy, xx = np.mgrid[0:HEIGHT, 0:WIDTH]
+        cy, cx = HEIGHT / 2, WIDTH / 2
+        vignette = 1.0 - 0.97 * (((yy - cy) ** 2 + (xx - cx) ** 2) / (cx**2 + cy**2))
+        flat = (30000 * vignette)[:, :, None] * np.ones(3)
+        flat[:, :, 0] = 65535.0
+        cv2.imwrite(str(tmp_path / "flats" / f"flat_{i}.png"), flat.clip(0, 65535).astype(np.uint16))
+
+    for i in range(4):
+        sy, sx = rng.integers(-6, 6), rng.integers(-6, 6)
+        cv2.imwrite(str(tmp_path / "lights" / f"light_{i}.png"), make_light_frame(rng, sy, sx))
+
+    result = orchestrator.run_pipeline(str(tmp_path), apply_dark=True, apply_flat=True)
+
+    assert len(result["calibration_warnings"]) == 1
+    assert "flat" in result["calibration_warnings"][0]
+    assert "B" in result["calibration_warnings"][0]
 
 
 def test_run_pipeline_without_calibration_still_stacks(synthetic_dataset):

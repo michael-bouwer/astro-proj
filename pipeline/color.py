@@ -63,38 +63,61 @@ def calibrate_star_color(bgr_f32, mask=None):
     return result
 
 
-def defringe_star_edges(bgr_f32, mask=None, ring_size=6):
+def defringe_star_edges(bgr_f32, mask=None, ring_size=10, max_desaturation=0.85, min_saturation=0.45, full_saturation=0.75):
     """Suppresses magenta/purple chromatic-aberration fringing in the ring
-    immediately around bright star cores.
+    around bright star cores by desaturating it, rather than shifting color
+    channels directly.
 
     Real optics focus different wavelengths slightly differently, so a bright
-    star's outer wings often carry a genuine (if usually subtle) excess of
-    red+blue over green; a strong display stretch later turns that excess
-    into a visibly sharp magenta halo. This pulls red and blue toward green
-    specifically in the near-star ring, scaled by both proximity to a star
-    and how purple the pixel actually is, so nothing is touched with a hard
-    edge (a binary mask cutover reads as its own visible ring -- the same
-    problem halos.fix_star_halos had) and background/nebula color elsewhere
-    in the frame is left alone.
+    star's outer wings often carry a genuine (if usually subtle) magenta/
+    purple color cast; a strong display stretch later turns that into a
+    visibly sharp halo. The standard fix (matching what dedicated
+    purple-fringe removal tools do) works in HSV space and touches only
+    saturation, leaving brightness alone, and only within the actual magenta/
+    purple hue band -- so real blue reflection-nebula color elsewhere in the
+    frame is left untouched rather than desaturated along with it.
+
+    Hue alone isn't a reliable enough gate on real data: a whole frame can
+    carry a mild, genuine ambient purple/magenta cast (residual chromatic
+    effects, imperfect color calibration) with a hue close enough to true
+    fringing that hue-gating alone doesn't tell them apart -- it ends up
+    desaturating a visible patch around every detected star, not just actual
+    fringing. A saturation floor fixes that: only pixels clearly *more*
+    saturated than the ambient level (i.e. actual concentrated color, not
+    just the background's usual tint) are treated as fringing.
+
+    Proximity, hue match, and saturation are all smoothly feathered (no hard
+    edge -- see halos.fix_star_halos for what a hard mask boundary looks like
+    once stretched) and the effect is capped short of full desaturation so a
+    genuinely magenta star doesn't get flattened to grey.
     """
     if mask is None:
         mask = star_mask(bgr_f32)
 
     mask_u8 = (mask * 255).astype(np.uint8)
     kernel = np.ones((ring_size, ring_size), np.uint8)
-    ring = cv2.dilate(mask_u8, kernel, iterations=2)
-    proximity = cv2.GaussianBlur(ring, (9, 9), 0).astype(np.float32) / 255.0
+    ring = cv2.dilate(mask_u8, kernel, iterations=3)
+    proximity = cv2.GaussianBlur(ring, (21, 21), 0).astype(np.float32) / 255.0
 
-    b, g, r = bgr_f32[:, :, 0], bgr_f32[:, :, 1], bgr_f32[:, :, 2]
-    purple_excess = np.minimum(r, b) - g
-    purple_alpha = np.clip(purple_excess / np.maximum(g, 1e-5), 0.0, 1.0)
+    peak = np.max(bgr_f32)
+    normalized = (bgr_f32 / peak if peak > 0 else bgr_f32).astype(np.float32)
+    hsv = cv2.cvtColor(normalized, cv2.COLOR_BGR2HSV)
+    hue, sat = hsv[:, :, 0], hsv[:, :, 1]
 
-    alpha = proximity * purple_alpha
+    # OpenCV's float32 HSV hue is in [0, 360); pure magenta sits at 300, with
+    # chromatic-aberration fringing typically spanning a purple-to-pink band
+    # either side of it. A soft cosine falloff from the band center rather
+    # than a hard in/out cutoff keeps the hue gate itself from introducing a
+    # visible edge.
+    hue_distance = np.minimum(np.abs(hue - 300.0), 360.0 - np.abs(hue - 300.0))
+    hue_gate = np.clip(1.0 - hue_distance / 45.0, 0.0, 1.0)
+    sat_gate = np.clip((sat - min_saturation) / (full_saturation - min_saturation), 0.0, 1.0)
 
-    result = bgr_f32.copy()
-    result[:, :, 0] = b - alpha * (b - g)
-    result[:, :, 2] = r - alpha * (r - g)
-    return result
+    alpha = proximity * hue_gate * sat_gate * max_desaturation
+    hsv[:, :, 1] *= 1.0 - alpha
+
+    result_normalized = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    return result_normalized * peak
 
 
 def calibrate(bgr_f32):
