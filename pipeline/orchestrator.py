@@ -8,11 +8,25 @@ import os
 
 from . import calibration, color, raw_io
 from .alignment import ReferenceFrame
-from .stacking import cleanup_memmap, create_memmap_stack, median_combine, sigma_clip_combine
+from .stacking import (
+    cleanup_memmap,
+    compute_frame_weights,
+    create_memmap_stack,
+    median_combine,
+    sigma_clip_combine,
+    winsorized_sigma_clip_combine,
+)
 
 LINEAR_MASTER_FILENAME = "master_linear.npy"
 
-INTEGRATION_METHODS = ("sigma_clip", "median")
+INTEGRATION_METHODS = ("sigma_clip", "winsorized_sigma_clip", "median")
+
+# Frames whose measured SNR is a statistical outlier relative to the rest of
+# the session get excluded from the combine (weight 0) -- see
+# stacking.compute_frame_weights. Not user-configurable: this is a quality
+# safety net, not a creative parameter, matching how other stacking tools
+# apply their own frame-quality rejection by default.
+QUALITY_REJECT_SIGMA = 3.0
 
 
 def _noop(stage, percent, message):
@@ -86,6 +100,11 @@ def run_pipeline(
     mem_stack, temp_filepath = create_memmap_stack(len(light_files), height, width, 3)
     mem_stack[0] = reference.bgr
     successful = 1
+    # Per-frame SNR (dB), parallel to the frames actually written into
+    # mem_stack -- feeds compute_frame_weights below so a frame's measured
+    # quality controls how much it counts toward the combine, the same way
+    # DSS's/PixInsight's weighted integration works.
+    qualities = [color.estimate_snr(reference.bgr)]
 
     try:
         remaining = light_files[1:]
@@ -96,6 +115,7 @@ def run_pipeline(
                 if aligned is None:
                     continue
                 mem_stack[successful] = aligned
+                qualities.append(color.estimate_snr(aligned))
                 successful += 1
             except Exception:
                 continue
@@ -104,9 +124,19 @@ def run_pipeline(
         if successful < 2:
             raise RuntimeError(f"Only {successful} frame(s) aligned successfully; need at least 2.")
 
+        weights, kept = compute_frame_weights(qualities, reject_sigma=QUALITY_REJECT_SIGMA)
+        quality_rejected_count = int((~kept).sum())
+
         progress_cb("stacking", 0, f"Stacking {successful} frames ({integration_method})...")
-        combine = sigma_clip_combine if integration_method == "sigma_clip" else median_combine
-        combine_kwargs = {"sigma": sigma} if integration_method == "sigma_clip" else {}
+        if integration_method == "sigma_clip":
+            combine = sigma_clip_combine
+            combine_kwargs = {"sigma": sigma, "weights": weights}
+        elif integration_method == "winsorized_sigma_clip":
+            combine = winsorized_sigma_clip_combine
+            combine_kwargs = {"sigma": sigma, "weights": weights}
+        else:
+            combine = median_combine
+            combine_kwargs = {}
         combined = combine(
             mem_stack,
             successful,
@@ -128,8 +158,9 @@ def run_pipeline(
     return {
         "output_path": output_path,
         "light_frame_count": len(light_files),
-        "stacked_frame_count": successful,
+        "stacked_frame_count": successful - quality_rejected_count,
         "rejected_frame_count": len(light_files) - successful,
+        "quality_rejected_count": quality_rejected_count,
         "applied_dark": apply_dark and master_dark is not None,
         "applied_flat": apply_flat and normalized_flat is not None,
         "integration_method": integration_method,

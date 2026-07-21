@@ -192,6 +192,22 @@ def test_run_pipeline_median_integration(synthetic_dataset):
     assert result["stacked_frame_count"] >= 2
 
 
+def test_run_pipeline_winsorized_sigma_clip_integration(synthetic_dataset):
+    result = orchestrator.run_pipeline(str(synthetic_dataset), integration_method="winsorized_sigma_clip")
+    assert result["integration_method"] == "winsorized_sigma_clip"
+    assert result["stacked_frame_count"] >= 2
+
+
+def test_run_pipeline_reports_quality_rejected_count(synthetic_dataset):
+    # The synthetic frames are statistically uniform (same star field/noise
+    # model, just shifted) -- none should look like a quality outlier to
+    # compute_frame_weights, so this should land at 0 and stacked_frame_count
+    # should account for every frame that aligned.
+    result = orchestrator.run_pipeline(str(synthetic_dataset))
+    assert result["quality_rejected_count"] == 0
+    assert result["stacked_frame_count"] == result["light_frame_count"] - result["rejected_frame_count"]
+
+
 def test_run_pipeline_writes_to_output_dir(synthetic_dataset, tmp_path):
     output_dir = tmp_path / "output"
     result = orchestrator.run_pipeline(str(synthetic_dataset), output_dir=str(output_dir))

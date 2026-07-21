@@ -1,4 +1,10 @@
-import type { RunParams, RunResult, Workspace } from "../api/types";
+import type { IntegrationMethod, RunParams, RunResult, Workspace } from "../api/types";
+
+const INTEGRATION_METHOD_SLUGS: Record<IntegrationMethod, string> = {
+  sigma_clip: "sigmaclip",
+  winsorized_sigma_clip: "winsorsigmaclip",
+  median: "median",
+};
 
 function sanitizeFilenamePart(value: string): string {
   // Strip characters invalid in Windows (and awkward on other OSes) filenames.
@@ -32,7 +38,7 @@ export function buildDefaultExportFilename({
   const parts = [sanitizeFilenamePart(workspace.name)];
 
   if (runParams) {
-    parts.push(runParams.integration_method === "sigma_clip" ? "sigmaclip" : runParams.integration_method);
+    parts.push(INTEGRATION_METHOD_SLUGS[runParams.integration_method]);
     parts.push(`s${runParams.sigma}`);
   }
 

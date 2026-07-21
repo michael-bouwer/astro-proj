@@ -1,6 +1,7 @@
 import os
 import uuid
 
+import psutil
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
@@ -20,6 +21,13 @@ app.add_middleware(
 
 loaded_masters = {}  # workspace_id -> linear float32 BGR ndarray, cached so the stretch controls don't hit disk every tick
 jobs = {}  # job_id -> {status, stage, percent, message, result, error, workspace_id}
+
+# Primes psutil.cpu_percent's internal delta tracking at import time -- called
+# with interval=None (non-blocking), the first-ever call always returns a
+# meaningless 0.0 since there's no prior sample to diff against. The frontend
+# polls /system/stats repeatedly, which is exactly the usage pattern
+# interval=None is meant for, so this only needs to happen once at startup.
+psutil.cpu_percent(interval=None)
 
 
 def _workspace_or_404(workspace_id):
@@ -110,6 +118,21 @@ class ExportRequest(BaseModel):
 @app.get("/")
 def read_root():
     return {"message": "Astro Backend is running!"}
+
+
+@app.get("/system/stats")
+def system_stats():
+    """System-wide CPU/memory usage -- the same numbers Task Manager reports,
+    not just this process, since stacking's actual cost (raw decode, alignment,
+    numpy combine) shows up across CPU cores and RAM at the OS level.
+    """
+    memory = psutil.virtual_memory()
+    return {
+        "cpu_percent": psutil.cpu_percent(interval=None),
+        "memory_percent": memory.percent,
+        "memory_used_gb": memory.used / 1e9,
+        "memory_total_gb": memory.total / 1e9,
+    }
 
 
 @app.post("/workspaces")

@@ -5,6 +5,7 @@ import type {
   MasterDimensions,
   RunParams,
   SaveVersionParams,
+  SystemStats,
   TransformParams,
   Version,
   Workspace,
@@ -125,6 +126,10 @@ export function listVersions(workspaceId: string): Promise<{ versions: Version[]
 
 export function versionImageUrl(workspaceId: string, versionId: string, variant: "thumbnail" | "export"): string {
   return `${API_BASE}/workspaces/${workspaceId}/versions/${versionId}/image?variant=${variant}`;
+}
+
+export function getSystemStats(): Promise<SystemStats> {
+  return request("/system/stats");
 }
 
 export function exportWorkspace(workspaceId: string, params: ExportParams): Promise<{ status: string; path: string }> {

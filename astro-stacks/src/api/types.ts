@@ -22,7 +22,7 @@ export type WorkspaceFrames = {
   biases: string[];
 };
 
-export type IntegrationMethod = "sigma_clip" | "median";
+export type IntegrationMethod = "sigma_clip" | "winsorized_sigma_clip" | "median";
 
 export type RunParams = {
   sigma: number;
@@ -36,6 +36,11 @@ export type RunResult = {
   light_frame_count: number;
   stacked_frame_count: number;
   rejected_frame_count: number;
+  // Frames that aligned fine but whose measured SNR was a statistical
+  // outlier vs. the rest of the session -- excluded from the combine
+  // (weight 0) rather than counted as "aligned but unused". See
+  // pipeline/stacking.py's compute_frame_weights.
+  quality_rejected_count: number;
   applied_dark: boolean;
   applied_flat: boolean;
   integration_method: IntegrationMethod;
@@ -147,3 +152,10 @@ export type ExportParams = StretchParams &
     format: ExportFormat;
     destination_path: string;
   };
+
+export type SystemStats = {
+  cpu_percent: number;
+  memory_percent: number;
+  memory_used_gb: number;
+  memory_total_gb: number;
+};

@@ -1,0 +1,33 @@
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.label {
+  color: var(--chakra-colors-fg-muted);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.value {
+  color: var(--chakra-colors-fg);
+  font-weight: 600;
+  min-width: 2.4em;
+}
+
+.valueWarning {
+  color: var(--chakra-colors-orange-fg);
+  font-weight: 600;
+  min-width: 2.4em;
+}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Heading } from "@chakra-ui/react";
+import { SystemStats } from "./SystemStats";
 import { ThemeToggle } from "./ThemeToggle";
 import styles from "./AppShell.module.scss";
 
@@ -22,6 +23,7 @@ export function AppShell({
         </button>
         <div className={styles.actions}>
           {actions}
+          <SystemStats />
           <ThemeToggle />
         </div>
       </header>

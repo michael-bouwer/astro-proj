@@ -32,6 +32,7 @@ export function StackingControls({
             }
           >
             <option value="sigma_clip">Sigma clip average</option>
+            <option value="winsorized_sigma_clip">Winsorized sigma clip</option>
             <option value="median">Median</option>
           </NativeSelect.Field>
           <NativeSelect.Indicator />
