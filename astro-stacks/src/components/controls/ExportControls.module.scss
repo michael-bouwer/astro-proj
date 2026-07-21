@@ -16,27 +16,6 @@
   color: var(--chakra-colors-fg-muted);
 }
 
-.sliderLabelRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.sliderValue {
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.hint {
-  font-size: 0.75rem;
-  color: var(--chakra-colors-fg-muted);
-}
-
-.cropReadout {
-  font-size: 0.8rem;
-  color: var(--chakra-colors-fg);
-}
-
 .infoText {
   font-size: 0.85rem;
   padding: 6px 10px;
@@ -45,14 +24,38 @@
   color: var(--chakra-colors-fg);
 }
 
-.presetRow {
+.hint {
+  font-size: 0.72rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.segmented {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.footer {
+.pathRow {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+}
+
+.pathInput {
+  flex: 1;
+}
+
+.extension {
+  font-size: 0.85rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.error {
+  font-size: 0.8rem;
+  color: var(--chakra-colors-red-fg);
+}
+
+.success {
+  font-size: 0.8rem;
+  color: var(--chakra-colors-green-fg);
 }

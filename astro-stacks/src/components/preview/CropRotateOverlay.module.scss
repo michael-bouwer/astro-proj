@@ -43,27 +43,3 @@
 .handleSw {
   cursor: nesw-resize;
 }
-
-.rotateHandle {
-  position: absolute;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: var(--chakra-colors-brand-solid);
-  border: 2px solid white;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-
-  &:active {
-    cursor: grabbing;
-  }
-}
-
-.rotateIcon {
-  width: 16px;
-  height: 16px;
-  color: white;
-}

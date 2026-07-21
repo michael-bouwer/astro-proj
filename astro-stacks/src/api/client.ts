@@ -1,5 +1,7 @@
 import type {
+  ExportParams,
   JobStatus,
+  MasterDimensions,
   RunParams,
   SaveVersionParams,
   TransformParams,
@@ -68,7 +70,7 @@ export function getJobStatus(workspaceId: string, jobId: string): Promise<JobSta
   return request(`/workspaces/${workspaceId}/pipeline/status/${jobId}`);
 }
 
-export function loadMaster(workspaceId: string): Promise<{ status: string }> {
+export function loadMaster(workspaceId: string): Promise<{ status: string } & MasterDimensions> {
   return request(`/workspaces/${workspaceId}/load_master`, { method: "POST" });
 }
 
@@ -115,6 +117,13 @@ export function listVersions(workspaceId: string): Promise<{ versions: Version[]
 
 export function versionImageUrl(workspaceId: string, versionId: string, variant: "thumbnail" | "export"): string {
   return `${API_BASE}/workspaces/${workspaceId}/versions/${versionId}/image?variant=${variant}`;
+}
+
+export function exportWorkspace(workspaceId: string, params: ExportParams): Promise<{ status: string; path: string }> {
+  return request(`/workspaces/${workspaceId}/export`, {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 }
 
 export { ApiError };

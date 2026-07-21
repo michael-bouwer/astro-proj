@@ -95,3 +95,12 @@ def encode_jpeg(array_u8, quality=92):
     if not ok:
         raise RuntimeError("JPEG encode failed")
     return encoded.tobytes()
+
+
+def save_image(path, array):
+    """Writes an image to an arbitrary destination path, codec chosen by the
+    path's extension (.tiff/.png accept uint16, .jpg/.jpeg needs uint8) --
+    used by the Export tab, which lets the user pick any format/location.
+    """
+    if not cv2.imwrite(path, array):
+        raise RuntimeError(f"Failed to write image: {path}")

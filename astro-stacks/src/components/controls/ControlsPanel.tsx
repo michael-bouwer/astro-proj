@@ -1,11 +1,22 @@
 import { Tabs } from "@chakra-ui/react";
-import type { JobStatus, RunParams, StretchParams, TransformParams } from "../../api/types";
+import type {
+  JobStatus,
+  MasterDimensions,
+  RunParams,
+  RunResult,
+  StretchParams,
+  TransformParams,
+  Workspace,
+} from "../../api/types";
 import { StackingControls } from "./StackingControls";
 import { StretchControls } from "./StretchControls";
 import { CropRotateControls } from "./CropRotateControls";
+import { ExportControls } from "./ExportControls";
 import styles from "./ControlsPanel.module.scss";
 
 export function ControlsPanel({
+  workspace,
+  masterLoaded,
   runParams,
   onRunParamsChange,
   onRun,
@@ -14,10 +25,21 @@ export function ControlsPanel({
   stretchParams,
   onStretchParamsChange,
   transformParams,
-  onTransformParamsChange,
+  pendingTransform,
+  onPendingChange,
+  masterDimensions,
+  cropEditing,
+  onStartEditCrop,
+  onApplyCrop,
+  onCancelCrop,
+  onResetCrop,
+  lastCompletedRunParams,
+  runResult,
   activeTab,
   onActiveTabChange,
 }: {
+  workspace: Workspace;
+  masterLoaded: boolean;
   runParams: RunParams;
   onRunParamsChange: (params: RunParams) => void;
   onRun: () => void;
@@ -26,7 +48,16 @@ export function ControlsPanel({
   stretchParams: StretchParams;
   onStretchParamsChange: (params: StretchParams) => void;
   transformParams: TransformParams;
-  onTransformParamsChange: (params: TransformParams) => void;
+  pendingTransform: TransformParams;
+  onPendingChange: (params: TransformParams) => void;
+  masterDimensions: MasterDimensions | null;
+  cropEditing: boolean;
+  onStartEditCrop: () => void;
+  onApplyCrop: () => void;
+  onCancelCrop: () => void;
+  onResetCrop: () => void;
+  lastCompletedRunParams: RunParams | null;
+  runResult: RunResult | null;
   activeTab: string;
   onActiveTabChange: (tab: string) => void;
 }) {
@@ -37,6 +68,7 @@ export function ControlsPanel({
           <Tabs.Trigger value="stacking">Stacking</Tabs.Trigger>
           <Tabs.Trigger value="stretch">Stretch</Tabs.Trigger>
           <Tabs.Trigger value="crop">Crop</Tabs.Trigger>
+          <Tabs.Trigger value="export">Export</Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="stacking">
           <StackingControls params={runParams} onChange={onRunParamsChange} onRun={onRun} running={running} job={job} />
@@ -45,7 +77,30 @@ export function ControlsPanel({
           <StretchControls params={stretchParams} onChange={onStretchParamsChange} />
         </Tabs.Content>
         <Tabs.Content value="crop">
-          <CropRotateControls params={transformParams} onChange={onTransformParamsChange} />
+          <CropRotateControls
+            transformParams={transformParams}
+            pendingTransform={pendingTransform}
+            onPendingChange={onPendingChange}
+            masterDimensions={masterDimensions}
+            masterLoaded={masterLoaded}
+            cropEditing={cropEditing}
+            onStartEdit={onStartEditCrop}
+            onApply={onApplyCrop}
+            onCancel={onCancelCrop}
+            onReset={onResetCrop}
+          />
+        </Tabs.Content>
+        <Tabs.Content value="export">
+          <ExportControls
+            workspaceId={workspace.id}
+            workspace={workspace}
+            masterLoaded={masterLoaded}
+            masterDimensions={masterDimensions}
+            stretchParams={stretchParams}
+            transformParams={transformParams}
+            runParams={lastCompletedRunParams}
+            runResult={runResult}
+          />
         </Tabs.Content>
       </Tabs.Root>
     </div>

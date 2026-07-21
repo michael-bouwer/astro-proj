@@ -110,3 +110,21 @@ export type Version = {
   stats: VersionStats;
   created_at: string;
 };
+
+export type MasterDimensions = {
+  width: number;
+  height: number;
+};
+
+export type ExportFormat = "tiff" | "png" | "jpeg";
+
+export type ExportParams = StretchParams & {
+  fix_halos: boolean;
+  rotation: number;
+  crop_x?: number;
+  crop_y?: number;
+  crop_width?: number;
+  crop_height?: number;
+  format: ExportFormat;
+  destination_path: string;
+};

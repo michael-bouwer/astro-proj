@@ -1,3 +1,4 @@
+import os
 import uuid
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -78,6 +79,22 @@ class SaveVersionRequest(BaseModel):
     crop_y: float | None = None
     crop_width: float | None = None
     crop_height: float | None = None
+
+
+class ExportRequest(BaseModel):
+    method: str = "auto"
+    midtone: float = 0.25
+    scale: float = 1000.0
+    target_bkg: float = 0.25
+    shadow_clip: float = -2.8
+    fix_halos: bool = True
+    rotation: float = 0.0
+    crop_x: float | None = None
+    crop_y: float | None = None
+    crop_width: float | None = None
+    crop_height: float | None = None
+    format: str = "tiff"  # "tiff" | "png" | "jpeg"
+    destination_path: str
 
 
 @app.get("/")
@@ -181,8 +198,10 @@ def load_workspace_master(workspace_id: str):
     if not ws["has_master"]:
         raise HTTPException(status_code=404, detail="No stacked master yet. Run the pipeline first.")
 
-    loaded_masters[workspace_id] = raw_io.load_linear_master(workspace.master_path(workspace_id))
-    return {"status": "loaded"}
+    master = raw_io.load_linear_master(workspace.master_path(workspace_id))
+    loaded_masters[workspace_id] = master
+    height, width = master.shape[:2]
+    return {"status": "loaded", "width": width, "height": height}
 
 
 @app.get("/workspaces/{workspace_id}/preview")
@@ -260,6 +279,49 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
     stats = {"snr_db": color.estimate_snr(transformed)}
 
     return workspace.save_version(workspace_id, req.note, params, stats, stretched_u16, thumbnail_u8)
+
+
+@app.post("/workspaces/{workspace_id}/export")
+def export_workspace(workspace_id: str, req: ExportRequest):
+    _workspace_or_404(workspace_id)
+    master = loaded_masters.get(workspace_id)
+    if master is None:
+        raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
+
+    destination_dir = os.path.dirname(req.destination_path)
+    if not os.path.isdir(destination_dir):
+        raise HTTPException(status_code=400, detail=f"Destination folder does not exist: {destination_dir}")
+
+    try:
+        crop_rect = _crop_rect(req.crop_x, req.crop_y, req.crop_width, req.crop_height)
+        transformed = transform.apply(master, req.rotation, crop_rect)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    stretched_u16 = stretch.to_uint16(
+        transformed,
+        method=req.method,
+        midtone=req.midtone,
+        scale=req.scale,
+        target_bkg=req.target_bkg,
+        shadow_clip=req.shadow_clip,
+    )
+    if req.fix_halos:
+        stretched_u16 = halos.fix_star_halos(stretched_u16)
+
+    if req.format == "jpeg":
+        output = (stretched_u16 // 256).astype("uint8")
+    elif req.format in ("tiff", "png"):
+        output = stretched_u16
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown export format: {req.format}")
+
+    try:
+        raw_io.save_image(req.destination_path, output)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {"status": "exported", "path": req.destination_path}
 
 
 @app.get("/workspaces/{workspace_id}/versions")

@@ -1,18 +1,22 @@
 import { useState } from "react";
 import { Text } from "@chakra-ui/react";
 import { previewUrl, referencePreviewUrl } from "../../api/client";
-import type { JobStatus, RunResult, StretchParams, TransformParams } from "../../api/types";
+import type { JobStatus, MasterDimensions, RunResult, StretchParams, TransformParams } from "../../api/types";
 import { StatBar } from "./StatBar";
 import { CropRotateOverlay } from "./CropRotateOverlay";
 import styles from "./PreviewPanel.module.scss";
+
+const UNROTATED: TransformParams = { rotationDeg: 0, crop: null };
 
 export function PreviewPanel({
   workspaceId,
   masterLoaded,
   stretchParams,
   transformParams,
-  onTransformParamsChange,
-  showCropOverlay,
+  cropEditing,
+  pendingTransform,
+  onPendingChange,
+  masterDimensions,
   previewVersion,
   runResult,
   job,
@@ -21,8 +25,10 @@ export function PreviewPanel({
   masterLoaded: boolean;
   stretchParams: StretchParams;
   transformParams: TransformParams;
-  onTransformParamsChange: (params: TransformParams) => void;
-  showCropOverlay: boolean;
+  cropEditing: boolean;
+  pendingTransform: TransformParams;
+  onPendingChange: (params: TransformParams) => void;
+  masterDimensions: MasterDimensions | null;
   previewVersion: number;
   runResult: RunResult | null;
   job: JobStatus | null;
@@ -30,17 +36,16 @@ export function PreviewPanel({
   const [referenceFailed, setReferenceFailed] = useState(false);
   const running = job?.status === "queued" || job?.status === "running";
 
-  // While the crop overlay is showing, the displayed image must stay on a
-  // stable, uncropped (rotation-only) reference frame -- otherwise every
-  // committed crop shrinks the actual displayed image (which object-fit:
-  // contain then scales back up to fill the canvas), and the box's 0-1
-  // coordinate space gets reinterpreted against that already-cropped result
-  // on the next edit instead of the original frame, drifting further with
-  // each adjustment. The real crop only gets baked into what's shown once
-  // you're not actively editing it (or when saving a version).
-  const displayTransform: TransformParams = showCropOverlay
-    ? { rotationDeg: transformParams.rotationDeg, crop: null }
-    : transformParams;
+  // While actively editing a crop, the displayed image stays on a stable,
+  // unrotated/uncropped reference fetched once from the backend -- rotation
+  // is instead previewed live via a CSS transform (no network round-trip per
+  // slider tick), and the crop box's 0-1 coordinate space is defined against
+  // this same unrotated canvas, matching how pipeline/transform.py crops
+  // *after* rotating. The real crop/rotation is only rendered server-side
+  // (and only then reflected here) once "Apply Cropping" commits it.
+  const imageSrc = cropEditing
+    ? previewUrl(workspaceId, stretchParams, previewVersion, UNROTATED)
+    : previewUrl(workspaceId, stretchParams, previewVersion, transformParams);
 
   return (
     <div className={styles.panel}>
@@ -63,14 +68,19 @@ export function PreviewPanel({
             </div>
           </div>
         ) : masterLoaded ? (
-          <div className={styles.imageWrap}>
+          <div className={cropEditing ? `${styles.imageWrap} ${styles.rotating}` : styles.imageWrap}>
             <img
               className={styles.image}
-              src={previewUrl(workspaceId, stretchParams, previewVersion, displayTransform)}
+              src={imageSrc}
               alt="Stacked preview"
+              style={cropEditing ? { transform: `rotate(${pendingTransform.rotationDeg}deg)` } : undefined}
             />
-            {showCropOverlay && (
-              <CropRotateOverlay transformParams={transformParams} onChange={onTransformParamsChange} />
+            {cropEditing && (
+              <CropRotateOverlay
+                pendingTransform={pendingTransform}
+                onPendingChange={onPendingChange}
+                masterDimensions={masterDimensions}
+              />
             )}
           </div>
         ) : (

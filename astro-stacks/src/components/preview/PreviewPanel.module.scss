@@ -25,6 +25,18 @@
   max-height: 100%;
 }
 
+// While actively rotating a crop, the image is spun in place with a CSS
+// transform (see PreviewPanel.tsx) -- clip it to the wrap's own box (which
+// exactly matches the unrotated image's rendered size) with a black backdrop
+// so the corners "rotate in black", the same way the backend's
+// cv2.warpAffine(..., borderValue=0) fills them server-side.
+.rotating {
+  overflow: hidden;
+  background: black;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--chakra-colors-border);
+}
+
 .image {
   display: block;
   max-width: 100%;
@@ -32,6 +44,10 @@
   object-fit: contain;
   border-radius: 6px;
   box-shadow: 0 0 0 1px var(--chakra-colors-border);
+}
+
+.rotating .image {
+  box-shadow: none;
 }
 
 .placeholder {

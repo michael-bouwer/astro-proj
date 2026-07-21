@@ -3,6 +3,7 @@ import { Text } from "@chakra-ui/react";
 import { ApiError, deleteWorkspace, getJobStatus, getWorkspace, loadMaster, runPipeline } from "../../api/client";
 import type {
   JobStatus,
+  MasterDimensions,
   RunParams,
   RunResult,
   StretchParams,
@@ -58,11 +59,14 @@ export function WorkspaceDetail({
   const [lastCompletedRunParams, setLastCompletedRunParams] = useState<RunParams | null>(null);
   const [stretchParams, setStretchParams] = useState<StretchParams>(DEFAULT_STRETCH_PARAMS);
   const [transformParams, setTransformParams] = useState<TransformParams>(DEFAULT_TRANSFORM_PARAMS);
+  const [pendingTransform, setPendingTransform] = useState<TransformParams>(DEFAULT_TRANSFORM_PARAMS);
+  const [cropEditing, setCropEditing] = useState(false);
   const [activeControlsTab, setActiveControlsTab] = useState("stacking");
 
   const [job, setJob] = useState<JobStatus | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [masterLoaded, setMasterLoaded] = useState(false);
+  const [masterDimensions, setMasterDimensions] = useState<MasterDimensions | null>(null);
   const [previewVersion, setPreviewVersion] = useState(0);
 
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -84,8 +88,9 @@ export function WorkspaceDetail({
   useEffect(() => {
     if (workspace?.has_master && !masterLoaded) {
       loadMaster(workspaceId)
-        .then(() => {
+        .then((result) => {
           setMasterLoaded(true);
+          setMasterDimensions({ width: result.width, height: result.height });
           setPreviewVersion((v) => v + 1);
         })
         .catch(() => {
@@ -102,6 +107,15 @@ export function WorkspaceDetail({
     };
   }, []);
 
+  // Leaving the Crop tab mid-edit discards the in-progress (uncommitted) crop
+  // rather than leaving stale editing UI active behind another tab.
+  useEffect(() => {
+    if (activeControlsTab !== "crop" && cropEditing) {
+      setCropEditing(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeControlsTab]);
+
   const handleRun = async () => {
     setError("");
     try {
@@ -117,8 +131,9 @@ export function WorkspaceDetail({
             if (pollRef.current) clearInterval(pollRef.current);
             setRunResult(status.result);
             setLastCompletedRunParams(runParams);
-            await loadMaster(workspaceId);
+            const loaded = await loadMaster(workspaceId);
             setMasterLoaded(true);
+            setMasterDimensions({ width: loaded.width, height: loaded.height });
             setPreviewVersion((v) => v + 1);
             refreshWorkspace();
           } else if (status.status === "error") {
@@ -137,6 +152,26 @@ export function WorkspaceDetail({
   const handleVersionSaved = (_version: Version) => {
     setSaveOpen(false);
     setHistoryOpen(true);
+  };
+
+  const startEditCrop = () => {
+    setPendingTransform(transformParams);
+    setCropEditing(true);
+  };
+
+  const applyCrop = () => {
+    setTransformParams(pendingTransform);
+    setCropEditing(false);
+  };
+
+  const cancelCrop = () => {
+    setCropEditing(false);
+  };
+
+  const resetCrop = () => {
+    setTransformParams(DEFAULT_TRANSFORM_PARAMS);
+    setPendingTransform(DEFAULT_TRANSFORM_PARAMS);
+    setCropEditing(false);
   };
 
   const running = job?.status === "queued" || job?.status === "running";
@@ -167,13 +202,17 @@ export function WorkspaceDetail({
           masterLoaded={masterLoaded}
           stretchParams={stretchParams}
           transformParams={transformParams}
-          onTransformParamsChange={setTransformParams}
-          showCropOverlay={activeControlsTab === "crop"}
+          cropEditing={cropEditing}
+          pendingTransform={pendingTransform}
+          onPendingChange={setPendingTransform}
+          masterDimensions={masterDimensions}
           previewVersion={previewVersion}
           runResult={runResult}
           job={job}
         />
         <ControlsPanel
+          workspace={workspace}
+          masterLoaded={masterLoaded}
           runParams={runParams}
           onRunParamsChange={setRunParams}
           onRun={handleRun}
@@ -182,7 +221,16 @@ export function WorkspaceDetail({
           stretchParams={stretchParams}
           onStretchParamsChange={setStretchParams}
           transformParams={transformParams}
-          onTransformParamsChange={setTransformParams}
+          pendingTransform={pendingTransform}
+          onPendingChange={setPendingTransform}
+          masterDimensions={masterDimensions}
+          cropEditing={cropEditing}
+          onStartEditCrop={startEditCrop}
+          onApplyCrop={applyCrop}
+          onCancelCrop={cancelCrop}
+          onResetCrop={resetCrop}
+          lastCompletedRunParams={lastCompletedRunParams}
+          runResult={runResult}
           activeTab={activeControlsTab}
           onActiveTabChange={setActiveControlsTab}
         />
