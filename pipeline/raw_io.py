@@ -26,7 +26,8 @@ def list_frames(directory):
 
 
 def load_frame(file_path, half_size=False):
-    """Loads a single frame (raw or image) as linear float32 BGR, camera white balance applied.
+    """Loads a single frame (raw or image) as linear float32 BGR, with a flat
+    (no per-channel gain) white balance.
 
     half_size decodes raw files at half resolution -- much faster, only intended
     for quick UI feedback (e.g. load_quick_preview below), never for the actual
@@ -41,9 +42,20 @@ def load_frame(file_path, half_size=False):
             # embedded EXIF rotation -- otherwise a light/dark/flat/bias set shot with the
             # camera rotated between sessions decodes to inconsistent (transposed) array
             # shapes and calibration/stacking arithmetic fails with a broadcast error.
+            # user_wb=[1,1,1,1] rather than use_camera_wb=True: a camera's as-shot WB
+            # gain is wildly uneven per channel (e.g. ~2x on blue vs green on real
+            # hardware observed here), and rawpy's highlight scaling doesn't reserve
+            # separate headroom per channel for that -- the heaviest-gained channel
+            # (usually blue) clips in the decoded output well before the sensor
+            # itself actually saturates. color.py's own calibrate_star_color and
+            # calibration.py's normalize_flat already rebalance channel color from
+            # scratch downstream, so nothing here depends on the camera's WB being
+            # baked in -- a flat gain avoids the avoidable clipping entirely, and is
+            # also more consistent across a session than each frame's own recorded
+            # (and, under auto white balance, potentially varying) camera WB.
             rgb = raw.postprocess(
                 half_size=half_size,
-                use_camera_wb=True,
+                user_wb=[1.0, 1.0, 1.0, 1.0],
                 no_auto_bright=True,
                 gamma=(1, 1),
                 output_bps=16,

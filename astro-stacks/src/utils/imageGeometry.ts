@@ -6,6 +6,22 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** The bounding-box size that fully contains a width x height image once
+ * rotated by degrees -- mirrors pipeline/transform.py's rotated_canvas_size
+ * exactly, so the live crop-editing preview's canvas grows the same way the
+ * backend's actual rotated output does (otherwise the preview would clip
+ * content -- e.g. the top/bottom of a wide image rotated 90 degrees -- that
+ * the applied result wouldn't). */
+export function rotatedCanvasSize(width: number, height: number, degrees: number): { width: number; height: number } {
+  const rad = (degrees * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  return {
+    width: Math.round(width * cos + height * sin),
+    height: Math.round(width * sin + height * cos),
+  };
+}
+
 /** Largest rect of the given pixel aspect ratio (width/height) that fits
  * inside `baseRect`, centered on `baseRect`'s own center -- reorients a crop
  * in place rather than resetting to the full frame, so clicking a preset

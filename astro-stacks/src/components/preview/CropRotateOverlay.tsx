@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { CropRect, MasterDimensions, TransformParams } from "../../api/types";
-import { FULL_FRAME_CROP, clamp } from "../../utils/imageGeometry";
+import { FULL_FRAME_CROP, clamp, rotatedCanvasSize } from "../../utils/imageGeometry";
 import styles from "./CropRotateOverlay.module.scss";
 
 const MIN_CROP_SIZE = 0.08;
@@ -87,6 +87,13 @@ export function CropRotateOverlay({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const crop = pendingTransform.crop ?? FULL_FRAME_CROP;
+  // This container is sized to the *rotated* bounding box (see
+  // PreviewPanel.tsx), so crop.x/y/width/height fractions -- and any pixel
+  // size or aspect-ratio math derived from masterDimensions -- need to be
+  // read against that same rotated size, not the frame's original one.
+  const editingDimensions = masterDimensions
+    ? rotatedCanvasSize(masterDimensions.width, masterDimensions.height, pendingTransform.rotationDeg)
+    : null;
 
   const setCrop = (next: CropRect) => onPendingChange({ ...pendingTransform, crop: next });
 
@@ -119,14 +126,14 @@ export function CropRotateOverlay({
     const startClientY = e.clientY;
     const startCrop = crop;
     const startAspect =
-      masterDimensions != null ? (startCrop.width * masterDimensions.width) / (startCrop.height * masterDimensions.height) : null;
+      editingDimensions != null ? (startCrop.width * editingDimensions.width) / (startCrop.height * editingDimensions.height) : null;
 
     const onMove = (ev: PointerEvent) => {
       const dx = (ev.clientX - startClientX) / rect.width;
       const dy = (ev.clientY - startClientY) / rect.height;
       let next = resizeFromCorner(startCrop, corner, dx, dy);
-      if (ev.shiftKey && startAspect != null && masterDimensions != null) {
-        next = lockAspect(next, corner, startAspect, masterDimensions.width, masterDimensions.height);
+      if (ev.shiftKey && startAspect != null && editingDimensions != null) {
+        next = lockAspect(next, corner, startAspect, editingDimensions.width, editingDimensions.height);
       }
       setCrop(next);
     };
@@ -155,9 +162,9 @@ export function CropRotateOverlay({
         style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.width), height: pct(crop.height) }}
         onPointerDown={startBoxDrag}
       >
-        {masterDimensions && (
+        {editingDimensions && (
           <div className={styles.dimensionLabel}>
-            {Math.round(crop.width * masterDimensions.width)} × {Math.round(crop.height * masterDimensions.height)} px
+            {Math.round(crop.width * editingDimensions.width)} × {Math.round(crop.height * editingDimensions.height)} px
           </div>
         )}
         <div

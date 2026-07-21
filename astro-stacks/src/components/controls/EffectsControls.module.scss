@@ -10,19 +10,3 @@
   flex-direction: column;
   gap: 6px;
 }
-
-.label {
-  font-size: 0.78rem;
-  color: var(--chakra-colors-fg-muted);
-}
-
-.sliderLabelRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.sliderValue {
-  font-size: 0.8rem;
-  font-weight: 600;
-}

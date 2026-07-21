@@ -21,17 +21,6 @@
   gap: 6px;
 }
 
-.sliderLabelRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.sliderValue {
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
 .hint {
   font-size: 0.72rem;
   color: var(--chakra-colors-fg-muted);

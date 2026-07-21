@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Text } from "@chakra-ui/react";
 import { previewUrl, referencePreviewUrl } from "../../api/client";
 import type { EffectsParams, JobStatus, MasterDimensions, RunResult, StretchParams, TransformParams } from "../../api/types";
+import { rotatedCanvasSize } from "../../utils/imageGeometry";
 import { StatBar } from "./StatBar";
 import { CropRotateOverlay } from "./CropRotateOverlay";
 import styles from "./PreviewPanel.module.scss";
@@ -40,7 +41,14 @@ export function PreviewPanel({
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  const [fitSize, setFitSize] = useState<{ width: number; height: number } | null>(null);
+  // .imageWrap's own box -- the bounding box the CSS-rotated image and crop
+  // overlay need to fit inside without clipping (see boundingSize below).
+  const [wrapSize, setWrapSize] = useState<{ width: number; height: number } | null>(null);
+  // The <img> element's own rendered size -- while crop-editing this differs
+  // from wrapSize (the unrotated image is smaller than its own rotated
+  // bounding box for any angle that isn't a multiple of 180), so it needs
+  // explicit sizing rather than filling the wrap.
+  const [imageRenderSize, setImageRenderSize] = useState<{ width: number; height: number } | null>(null);
 
   // .imageWrap shrink-wraps to the image's own rendered box via max-width/
   // max-height: 100% (see PreviewPanel.module.scss) so the crop overlay's
@@ -51,27 +59,41 @@ export function PreviewPanel({
   // size. In a canvas that's wide but short (a short browser window, say),
   // that let the image overflow past the bottom with no way to scroll to it.
   // Computing an explicit pixel size here breaks the circularity outright.
+  //
+  // While crop-editing, the wrap is sized to the *rotated* bounding box
+  // (rotatedCanvasSize), not the raw natural size -- otherwise a CSS-rotated
+  // wide image (e.g. a 90-degree rotation) would overflow a wrap still sized
+  // for its original, now-wrong-aspect footprint, clipping off whatever
+  // doesn't fit (the top and bottom, for a 90-degree rotation). This mirrors
+  // pipeline/transform.py's rotate(), which expands the canvas the same way,
+  // so the live preview and the actually-applied result agree.
   useEffect(() => {
     const canvasEl = canvasRef.current;
     if (!canvasEl || !naturalSize) {
-      setFitSize(null);
+      setWrapSize(null);
+      setImageRenderSize(null);
       return;
     }
+
+    const boundingSize = cropEditing
+      ? rotatedCanvasSize(naturalSize.width, naturalSize.height, pendingTransform.rotationDeg)
+      : naturalSize;
 
     const recompute = () => {
       const cs = getComputedStyle(canvasEl);
       const availableWidth = canvasEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       const availableHeight = canvasEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
       if (availableWidth <= 0 || availableHeight <= 0) return;
-      const scale = Math.min(availableWidth / naturalSize.width, availableHeight / naturalSize.height);
-      setFitSize({ width: naturalSize.width * scale, height: naturalSize.height * scale });
+      const scale = Math.min(availableWidth / boundingSize.width, availableHeight / boundingSize.height);
+      setWrapSize({ width: boundingSize.width * scale, height: boundingSize.height * scale });
+      setImageRenderSize({ width: naturalSize.width * scale, height: naturalSize.height * scale });
     };
 
     recompute();
     const observer = new ResizeObserver(recompute);
     observer.observe(canvasEl);
     return () => observer.disconnect();
-  }, [naturalSize]);
+  }, [naturalSize, cropEditing, pendingTransform.rotationDeg]);
 
   // While actively editing a crop, the displayed image stays on a stable,
   // unrotated/uncropped reference fetched once from the backend -- rotation
@@ -112,7 +134,7 @@ export function PreviewPanel({
         ) : masterLoaded ? (
           <div
             className={cropEditing ? `${styles.imageWrap} ${styles.rotating}` : styles.imageWrap}
-            style={fitSize ? { width: fitSize.width, height: fitSize.height } : undefined}
+            style={wrapSize ? { width: wrapSize.width, height: wrapSize.height } : undefined}
           >
             <img
               className={styles.image}
@@ -122,7 +144,20 @@ export function PreviewPanel({
                 const el = e.currentTarget;
                 setNaturalSize({ width: el.naturalWidth, height: el.naturalHeight });
               }}
-              style={cropEditing ? { transform: `rotate(${pendingTransform.rotationDeg}deg)` } : undefined}
+              style={
+                cropEditing && imageRenderSize
+                  ? {
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      width: imageRenderSize.width,
+                      height: imageRenderSize.height,
+                      maxWidth: "none",
+                      maxHeight: "none",
+                      transform: `translate(-50%, -50%) rotate(${pendingTransform.rotationDeg}deg)`,
+                    }
+                  : undefined
+              }
             />
             {cropEditing && (
               <CropRotateOverlay

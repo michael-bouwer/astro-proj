@@ -1,0 +1,24 @@
+.labelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.label {
+  font-size: 0.78rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.numberInput {
+  width: 72px;
+  flex-shrink: 0;
+
+  input {
+    text-align: right;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding-inline: 6px;
+  }
+}

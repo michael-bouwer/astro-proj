@@ -1,4 +1,4 @@
-import { Button, Slider, Text } from "@chakra-ui/react";
+import { Button, Text } from "@chakra-ui/react";
 import type { MasterDimensions, TransformParams } from "../../api/types";
 import {
   FULL_FRAME_CROP,
@@ -6,8 +6,10 @@ import {
   centeredCropForSize,
   cropMatchesAspect,
   cropMatchesSize,
+  rotatedCanvasSize,
   simplifyRatio,
 } from "../../utils/imageGeometry";
+import { LabeledSlider } from "./LabeledSlider";
 import styles from "./CropRotateControls.module.scss";
 
 const ASPECT_PRESETS: { label: string; aspect: number | null }[] = [
@@ -61,6 +63,13 @@ export function CropRotateControls({
   const canReset = transformParams.rotationDeg !== 0 || !!transformParams.crop;
 
   if (!cropEditing) {
+    // Crop fractions apply to the *rotated* canvas (pipeline/transform.py
+    // rotates before cropping, and now expands the canvas to fit), so the
+    // committed rotation needs to be folded in before turning those
+    // fractions back into a pixel size.
+    const committedDimensions = masterDimensions
+      ? rotatedCanvasSize(masterDimensions.width, masterDimensions.height, transformParams.rotationDeg)
+      : null;
     return (
       <div className={styles.section}>
         <div className={styles.field}>
@@ -70,9 +79,9 @@ export function CropRotateControls({
         <div className={styles.field}>
           <Text className={styles.label}>Crop</Text>
           <Text className={styles.infoText}>
-            {transformParams.crop && masterDimensions
+            {transformParams.crop && committedDimensions
               ? (() => {
-                  const { width, height } = cropPixelSize(transformParams, masterDimensions);
+                  const { width, height } = cropPixelSize(transformParams, committedDimensions);
                   return `${width} × ${height} px · ${simplifyRatio(width, height)}`;
                 })()
               : "Full frame"}
@@ -88,27 +97,26 @@ export function CropRotateControls({
     );
   }
 
+  // Same reasoning as committedDimensions above, but against the *pending*
+  // rotation while it's actively being adjusted -- the crop overlay and
+  // preview canvas are both sized to this same rotated bounding box (see
+  // PreviewPanel.tsx), so presets/labels need to agree with what's on screen.
+  const editingDimensions = masterDimensions
+    ? rotatedCanvasSize(masterDimensions.width, masterDimensions.height, pendingTransform.rotationDeg)
+    : null;
+
   return (
     <div className={styles.section}>
       <div className={styles.field}>
-        <div className={styles.sliderLabelRow}>
-          <Text className={styles.label}>Rotation</Text>
-          <Text className={styles.sliderValue}>{pendingTransform.rotationDeg.toFixed(1)}°</Text>
-        </div>
-        <Slider.Root
-          value={[pendingTransform.rotationDeg]}
+        <LabeledSlider
+          label="Rotation"
+          value={pendingTransform.rotationDeg}
           min={-180}
           max={180}
           step={0.1}
-          onValueChange={(details) => onPendingChange({ ...pendingTransform, rotationDeg: details.value[0] })}
-        >
-          <Slider.Control>
-            <Slider.Track>
-              <Slider.Range />
-            </Slider.Track>
-            <Slider.Thumb index={0} />
-          </Slider.Control>
-        </Slider.Root>
+          precision={1}
+          onChange={(rotationDeg) => onPendingChange({ ...pendingTransform, rotationDeg })}
+        />
       </div>
 
       <div className={styles.field}>
@@ -119,26 +127,26 @@ export function CropRotateControls({
               preset.aspect == null
                 ? !pendingTransform.crop
                 : !!pendingTransform.crop &&
-                  !!masterDimensions &&
-                  cropMatchesAspect(pendingTransform.crop, preset.aspect, masterDimensions.width, masterDimensions.height);
+                  !!editingDimensions &&
+                  cropMatchesAspect(pendingTransform.crop, preset.aspect, editingDimensions.width, editingDimensions.height);
             return (
               <Button
                 key={preset.label}
                 size="sm"
                 variant={isActive ? "solid" : "outline"}
                 colorPalette="brand"
-                disabled={!masterDimensions}
+                disabled={!editingDimensions}
                 onClick={() =>
                   onPendingChange({
                     ...pendingTransform,
                     crop:
-                      preset.aspect == null || !masterDimensions
+                      preset.aspect == null || !editingDimensions
                         ? null
                         : centeredCropForAspect(
                             preset.aspect,
                             pendingTransform.crop ?? FULL_FRAME_CROP,
-                            masterDimensions.width,
-                            masterDimensions.height,
+                            editingDimensions.width,
+                            editingDimensions.height,
                           ),
                   })
                 }
@@ -160,12 +168,13 @@ export function CropRotateControls({
         <Text className={styles.label}>Common resolutions</Text>
         <div className={styles.presetRow}>
           {RESOLUTION_PRESETS.map((preset) => {
-            const bigEnough = !!masterDimensions && masterDimensions.width >= preset.width && masterDimensions.height >= preset.height;
+            const bigEnough =
+              !!editingDimensions && editingDimensions.width >= preset.width && editingDimensions.height >= preset.height;
             const isActive =
               bigEnough &&
               !!pendingTransform.crop &&
-              !!masterDimensions &&
-              cropMatchesSize(pendingTransform.crop, preset.width, preset.height, masterDimensions.width, masterDimensions.height);
+              !!editingDimensions &&
+              cropMatchesSize(pendingTransform.crop, preset.width, preset.height, editingDimensions.width, editingDimensions.height);
             return (
               <Button
                 key={preset.label}
@@ -174,15 +183,15 @@ export function CropRotateControls({
                 colorPalette="brand"
                 disabled={!bigEnough}
                 onClick={() =>
-                  masterDimensions &&
+                  editingDimensions &&
                   onPendingChange({
                     ...pendingTransform,
                     crop: centeredCropForSize(
                       preset.width,
                       preset.height,
                       pendingTransform.crop ?? FULL_FRAME_CROP,
-                      masterDimensions.width,
-                      masterDimensions.height,
+                      editingDimensions.width,
+                      editingDimensions.height,
                     ),
                   })
                 }
@@ -193,8 +202,8 @@ export function CropRotateControls({
           })}
         </div>
         <Text className={styles.hint}>
-          {masterDimensions
-            ? `Source is ${masterDimensions.width} × ${masterDimensions.height} px -- resolutions above that are disabled.`
+          {editingDimensions
+            ? `Source is ${editingDimensions.width} × ${editingDimensions.height} px -- resolutions above that are disabled.`
             : "Available once the master is loaded."}
         </Text>
       </div>

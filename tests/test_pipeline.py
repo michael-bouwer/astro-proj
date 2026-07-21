@@ -399,21 +399,51 @@ def test_rotate_zero_degrees_is_a_noop():
     assert rotated is img  # short-circuited, not just equal
 
 
-def test_rotate_preserves_shape_and_visibly_changes_content():
+def test_rotate_at_45_degrees_expands_canvas_and_changes_content():
     rng = _rng()
     img = make_light_frame(rng).astype(np.float32)
     rotated = transform.rotate(img, 45)
-    assert rotated.shape == img.shape
-    assert not np.array_equal(rotated, img)
+    # A 45-degree rotation needs a bigger bounding box to avoid losing content
+    # off the edges -- the canvas should grow, not stay the original size.
+    assert rotated.shape[0] > img.shape[0]
+    assert rotated.shape[1] > img.shape[1]
+    assert rotated.shape[2] == img.shape[2]
 
 
-def test_rotate_180_is_a_point_reflection():
+def test_rotate_180_is_a_point_reflection_and_keeps_canvas_size():
     img = np.zeros((40, 60, 3), dtype=np.float32)
     img[5, 5] = [1.0, 1.0, 1.0]  # near top-left corner
     rotated = transform.rotate(img, 180)
+    # 180 degrees needs no extra room -- same bounding box as the original.
+    assert rotated.shape == img.shape
     # should now land near the bottom-right corner instead
     assert rotated[-6:-4, -6:-4].max() > 0.5
     assert rotated[5, 5].max() < 0.1
+
+
+def test_rotate_at_90_degrees_swaps_dimensions_without_clipping():
+    # The bug this guards against: rotating a wide image by 90 degrees needs
+    # a tall canvas -- forcing it back into the original wide canvas (the old
+    # behavior) clipped off whatever didn't fit, e.g. content near the top
+    # and bottom edges of the now-portrait-oriented result.
+    img = np.zeros((40, 100, 3), dtype=np.float32)  # wide: 100 x 40
+    img[2:6, 48:52] = 1.0  # a marker near the top edge, mid-width
+
+    rotated = transform.rotate(img, 90)
+
+    assert rotated.shape[0] == img.shape[1]  # height <-> width swap
+    assert rotated.shape[1] == img.shape[0]
+    assert rotated.max() > 0.5  # the marker survived the rotation, not clipped away
+
+
+def test_rotated_canvas_size_matches_rotate_output_shape():
+    rng = _rng()
+    img = make_light_frame(rng).astype(np.float32)
+    height, width = img.shape[:2]
+    for degrees in (10, 45, 90, 135, 200):
+        expected_width, expected_height = transform.rotated_canvas_size(width, height, degrees)
+        rotated = transform.rotate(img, degrees)
+        assert rotated.shape[:2] == (expected_height, expected_width)
 
 
 def test_crop_extracts_expected_pixel_region():
