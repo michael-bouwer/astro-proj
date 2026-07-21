@@ -147,7 +147,7 @@ export function WorkspaceList({
                       : "var(--chakra-colors-yellow-100)",
                   }}
                 >
-                  {ws.has_master ? "Stacked" : "In Progress"}
+                  {ws.has_master ? "Stacked" : "Not stacked"}
                 </span>
               )}
 

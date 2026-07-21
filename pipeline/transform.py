@@ -16,7 +16,11 @@ def rotate(bgr_f32, degrees):
 
     height, width = bgr_f32.shape[:2]
     center = (width / 2.0, height / 2.0)
-    matrix = cv2.getRotationMatrix2D(center, degrees, 1.0)
+    # cv2.getRotationMatrix2D treats a positive angle as counter-clockwise;
+    # the frontend's live rotation preview uses CSS's rotate(), where
+    # positive is clockwise. Negating here keeps the two in agreement, so the
+    # direction shown while editing matches what "Apply Cropping" renders.
+    matrix = cv2.getRotationMatrix2D(center, -degrees, 1.0)
     return cv2.warpAffine(
         bgr_f32, matrix, (width, height), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0
     )

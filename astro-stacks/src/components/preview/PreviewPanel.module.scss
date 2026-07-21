@@ -19,10 +19,16 @@
 // Shrink-wraps to the <img>'s actual rendered box (not the whole canvas), so
 // the absolutely-positioned crop/rotate overlay lines up with the image
 // exactly without needing to compute object-fit letterbox offsets in JS.
+// min-height: 0 is required despite max-height already being set -- flex
+// items default to min-height: auto, which resolves to the content's natural
+// size and silently overrides max-height, letting a wide/short canvas (e.g.
+// a short browser window) render the image past its available height with no
+// way to scroll to the rest, since .panel clips overflow.
 .imageWrap {
   position: relative;
   max-width: 100%;
   max-height: 100%;
+  min-height: 0;
 }
 
 // While actively rotating a crop, the image is spun in place with a CSS

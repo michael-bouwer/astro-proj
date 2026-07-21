@@ -63,18 +63,57 @@ def calibrate_star_color(bgr_f32, mask=None):
     return result
 
 
+def defringe_star_edges(bgr_f32, mask=None, ring_size=6):
+    """Suppresses magenta/purple chromatic-aberration fringing in the ring
+    immediately around bright star cores.
+
+    Real optics focus different wavelengths slightly differently, so a bright
+    star's outer wings often carry a genuine (if usually subtle) excess of
+    red+blue over green; a strong display stretch later turns that excess
+    into a visibly sharp magenta halo. This pulls red and blue toward green
+    specifically in the near-star ring, scaled by both proximity to a star
+    and how purple the pixel actually is, so nothing is touched with a hard
+    edge (a binary mask cutover reads as its own visible ring -- the same
+    problem halos.fix_star_halos had) and background/nebula color elsewhere
+    in the frame is left alone.
+    """
+    if mask is None:
+        mask = star_mask(bgr_f32)
+
+    mask_u8 = (mask * 255).astype(np.uint8)
+    kernel = np.ones((ring_size, ring_size), np.uint8)
+    ring = cv2.dilate(mask_u8, kernel, iterations=2)
+    proximity = cv2.GaussianBlur(ring, (9, 9), 0).astype(np.float32) / 255.0
+
+    b, g, r = bgr_f32[:, :, 0], bgr_f32[:, :, 1], bgr_f32[:, :, 2]
+    purple_excess = np.minimum(r, b) - g
+    purple_alpha = np.clip(purple_excess / np.maximum(g, 1e-5), 0.0, 1.0)
+
+    alpha = proximity * purple_alpha
+
+    result = bgr_f32.copy()
+    result[:, :, 0] = b - alpha * (b - g)
+    result[:, :, 2] = r - alpha * (r - g)
+    return result
+
+
 def calibrate(bgr_f32):
-    """Runs star color calibration followed by background neutralization.
+    """Runs star color calibration, near-star defringing, then background
+    neutralization.
 
     Background neutralization must run last: it's a uniform per-channel shift,
     so if star color calibration ran afterward, its star-derived R/B scale
     factors would get applied to the just-neutralized background too and
-    reintroduce a color cast there.
+    reintroduce a color cast there. Defringing runs in between, against the
+    star-calibrated color balance, since it's a local correction on top of
+    that global one.
     """
     mask = star_mask(bgr_f32)
     star_calibrated = calibrate_star_color(bgr_f32, mask)
     mask = star_mask(star_calibrated)
-    return neutralize_background(star_calibrated, mask)
+    defringed = defringe_star_edges(star_calibrated, mask)
+    mask = star_mask(defringed)
+    return neutralize_background(defringed, mask)
 
 
 def estimate_snr(bgr_f32, mask=None):

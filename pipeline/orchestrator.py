@@ -11,6 +11,7 @@ from .alignment import ReferenceFrame
 from .stacking import (
     cleanup_memmap,
     compute_frame_weights,
+    create_coverage_stack,
     create_memmap_stack,
     median_combine,
     sigma_clip_combine,
@@ -98,7 +99,9 @@ def run_pipeline(
     height, width = reference.height, reference.width
 
     mem_stack, temp_filepath = create_memmap_stack(len(light_files), height, width, 3)
+    coverage_stack, coverage_temp_filepath = create_coverage_stack(len(light_files), height, width)
     mem_stack[0] = reference.bgr
+    coverage_stack[0] = True  # the reference frame is never warped, so it's valid everywhere
     successful = 1
     # Per-frame SNR (dB), parallel to the frames actually written into
     # mem_stack -- feeds compute_frame_weights below so a frame's measured
@@ -110,10 +113,12 @@ def run_pipeline(
         for idx, path in enumerate(remaining, start=1):
             try:
                 frame = calibrate(raw_io.load_frame(path))
-                aligned = reference.align(frame)
-                if aligned is None:
+                result = reference.align(frame)
+                if result is None:
                     continue
+                aligned, valid_mask = result
                 mem_stack[successful] = aligned
+                coverage_stack[successful] = valid_mask
                 qualities.append(color.estimate_snr(aligned))
                 successful += 1
             except Exception:
@@ -140,10 +145,12 @@ def run_pipeline(
             mem_stack,
             successful,
             progress_cb=lambda pct: progress_cb("stacking", pct, "Stacking..."),
+            valid_mask_stack=coverage_stack,
             **combine_kwargs,
         )
     finally:
         cleanup_memmap(mem_stack, temp_filepath)
+        cleanup_memmap(coverage_stack, coverage_temp_filepath)
 
     progress_cb("color", 0, "Calibrating star color and neutralizing background...")
     linear_master = color.calibrate(combined)

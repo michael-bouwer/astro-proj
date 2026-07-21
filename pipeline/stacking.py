@@ -26,6 +26,7 @@ physically remove it from the memmap.
 import gc
 import os
 import tempfile
+import warnings
 
 import numpy as np
 
@@ -38,6 +39,21 @@ def create_memmap_stack(count, height, width, channels=3):
         temp_filepath, dtype=np.float32, mode="w+", shape=(count, height, width, channels)
     )
     return mem_stack, temp_filepath
+
+
+def create_coverage_stack(count, height, width):
+    """A (count, height, width) boolean memmap paralleling create_memmap_stack's
+    pixel data, marking which pixels in each frame are real (aligned) data vs.
+    the black border fill introduced by rotating/shifting a frame to match the
+    reference -- see alignment.ReferenceFrame.align. Passed to the combine
+    functions below as valid_mask_stack so that border fill never counts
+    toward a pixel's average.
+    """
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_filepath = temp_file.name
+    temp_file.close()
+    coverage_stack = np.memmap(temp_filepath, dtype=bool, mode="w+", shape=(count, height, width))
+    return coverage_stack, temp_filepath
 
 
 def cleanup_memmap(mem_stack, temp_filepath):
@@ -115,6 +131,11 @@ def _masked_median(values, valid):
     values (which does have a fast path) with invalid entries pushed past
     the end, then picking the middle of the *valid* run via a per-pixel
     count, computes the exact same value.
+
+    A pixel with zero valid frames (e.g. outside every frame's coverage after
+    alignment) has nothing to take a middle of -- returns 0 there rather than
+    the pushed sentinel (+inf), which would otherwise propagate into inf/nan
+    through any further arithmetic on the result.
     """
     n = values.shape[0]
     pushed = np.where(valid, values, np.inf)
@@ -124,7 +145,18 @@ def _masked_median(values, valid):
     upper_idx = np.clip(counts // 2, 0, n - 1)
     lower_val = np.take_along_axis(sorted_vals, lower_idx[np.newaxis, ...], axis=0)[0]
     upper_val = np.take_along_axis(sorted_vals, upper_idx[np.newaxis, ...], axis=0)[0]
-    return (lower_val + upper_val) / 2.0
+    return np.where(counts > 0, (lower_val + upper_val) / 2.0, 0.0)
+
+
+def _valid_chunk(valid_mask_stack, frame_count, y, y_end, shape):
+    """Pulls a (frame_count, rows, width) coverage slice off valid_mask_stack
+    and broadcasts it to a chunk's (frames, rows, width, channels) shape --
+    or, with no coverage tracking, everything is valid.
+    """
+    if valid_mask_stack is None:
+        return np.ones(shape, dtype=bool)
+    coverage = np.array(valid_mask_stack[:frame_count, y:y_end, :])
+    return np.broadcast_to(coverage[..., np.newaxis], shape)
 
 
 def _weighted_average(values, keep, weights):
@@ -141,13 +173,22 @@ def _weighted_average(values, keep, weights):
     return weighted_sum / np.maximum(weight_total, 1e-6)
 
 
-def sigma_clip_combine(mem_stack, frame_count, sigma=3.0, iterations=3, weights=None, chunk_rows=100, progress_cb=None):
+def sigma_clip_combine(
+    mem_stack, frame_count, sigma=3.0, iterations=3, weights=None, chunk_rows=100, progress_cb=None, valid_mask_stack=None
+):
     """Iterative, median/MAD-based (robust) sigma-clipped weighted average.
 
     Rejection statistics (the median/MAD each pass) are computed on the raw
     pixel values, not weighted -- weighting reflects how much a frame should
     count toward the final image, not how "typical" a value is for outlier
     purposes. Weights only enter at the final averaging step.
+
+    valid_mask_stack (see create_coverage_stack) excludes each frame's
+    black border-fill pixels (introduced by rotating/shifting to align with
+    the reference) from the outset, so a frame that doesn't reach a given
+    edge pixel never counts toward that pixel's statistics or average --
+    without this, a pixel with partial frame coverage gets its value dragged
+    toward black in proportion to how many frames don't reach it.
     """
     _, height, width, channels = mem_stack.shape
     result = np.zeros((height, width, channels), dtype=np.float32)
@@ -156,7 +197,7 @@ def sigma_clip_combine(mem_stack, frame_count, sigma=3.0, iterations=3, weights=
     for y in range(0, height, chunk_rows):
         y_end = min(y + chunk_rows, height)
         chunk = np.array(mem_stack[:frame_count, y:y_end, :, :])  # pull off disk into RAM
-        valid = np.ones(chunk.shape, dtype=bool)  # narrows as iterations reject more
+        valid = _valid_chunk(valid_mask_stack, frame_count, y, y_end, chunk.shape)  # narrows as iterations reject more
 
         for _ in range(iterations):
             median = _masked_median(chunk, valid)
@@ -179,7 +220,9 @@ def sigma_clip_combine(mem_stack, frame_count, sigma=3.0, iterations=3, weights=
     return result
 
 
-def winsorized_sigma_clip_combine(mem_stack, frame_count, sigma=3.0, winsorize_iterations=3, weights=None, chunk_rows=100, progress_cb=None):
+def winsorized_sigma_clip_combine(
+    mem_stack, frame_count, sigma=3.0, winsorize_iterations=3, weights=None, chunk_rows=100, progress_cb=None, valid_mask_stack=None
+):
     """Winsorized Sigma Clipping: winsorizes (caps, doesn't discard) values
     outside the current mean/std over a few passes to get a std estimate
     that isn't itself skewed by the outliers it's meant to reject, then does
@@ -190,6 +233,11 @@ def winsorized_sigma_clip_combine(mem_stack, frame_count, sigma=3.0, winsorize_i
     std enough that even the first winsorizing pass's bounds stay wide
     enough to never actually cap it, which stalls every later iteration at
     that same contaminated starting point.
+
+    valid_mask_stack -- see sigma_clip_combine's docstring -- excludes each
+    frame's black border-fill pixels from every statistic computed here
+    (median/MAD seed, winsorized mean/std, and the final average), via NaN
+    (mean/std already have numpy's fast nan-aware path, unlike median).
     """
     _, height, width, channels = mem_stack.shape
     result = np.zeros((height, width, channels), dtype=np.float32)
@@ -198,19 +246,27 @@ def winsorized_sigma_clip_combine(mem_stack, frame_count, sigma=3.0, winsorize_i
     for y in range(0, height, chunk_rows):
         y_end = min(y + chunk_rows, height)
         chunk = np.array(mem_stack[:frame_count, y:y_end, :, :])
+        valid = _valid_chunk(valid_mask_stack, frame_count, y, y_end, chunk.shape)
+        nan_chunk = np.where(valid, chunk, np.nan)
 
-        median = np.median(chunk, axis=0)
-        mean, std = median, 1.4826 * np.median(np.abs(chunk - median), axis=0)
-        for _ in range(winsorize_iterations):
-            lower = mean - sigma * std
-            upper = mean + sigma * std
-            winsorized = np.clip(chunk, lower, upper)
-            mean = winsorized.mean(axis=0)
-            std = winsorized.std(axis=0) * 1.134  # bias correction for the variance winsorizing removes
+        median = _masked_median(chunk, valid)
+        mean, std = median, 1.4826 * _masked_median(np.abs(chunk - median), valid)
+        with warnings.catch_warnings():
+            # Pixels with zero coverage from any frame (nan_chunk all-NaN
+            # there) trigger numpy's "empty slice" warnings below -- benign,
+            # since _weighted_average's own would_empty fallback handles
+            # those pixels correctly regardless of what mean/std come out to.
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            for _ in range(winsorize_iterations):
+                lower = mean - sigma * std
+                upper = mean + sigma * std
+                winsorized = np.clip(nan_chunk, lower, upper)
+                mean = np.nanmean(winsorized, axis=0)
+                std = np.nanstd(winsorized, axis=0) * 1.134  # bias correction for the variance winsorizing removes
 
         lower = mean - sigma * std
         upper = mean + sigma * std
-        keep = (chunk >= lower) & (chunk <= upper)
+        keep = valid & (chunk >= lower) & (chunk <= upper)
 
         result[y:y_end, :, :] = _weighted_average(chunk, keep, weights)
 
@@ -220,11 +276,14 @@ def winsorized_sigma_clip_combine(mem_stack, frame_count, sigma=3.0, winsorize_i
     return result
 
 
-def median_combine(mem_stack, frame_count, chunk_rows=100, progress_cb=None):
+def median_combine(mem_stack, frame_count, chunk_rows=100, progress_cb=None, valid_mask_stack=None):
     """Plain median combine -- cheaper and still useful for small calibration-frame
     sets. Unlike the two rejection-based combines above, this isn't weighted:
     a weighted median isn't a standard feature of the tools this pipeline is
     modeled on, so per-frame quality only affects the sigma-clip methods.
+
+    valid_mask_stack -- see sigma_clip_combine's docstring -- excludes each
+    frame's black border-fill pixels from the median.
     """
     _, height, width, channels = mem_stack.shape
     result = np.zeros((height, width, channels), dtype=np.float32)
@@ -232,7 +291,11 @@ def median_combine(mem_stack, frame_count, chunk_rows=100, progress_cb=None):
     for y in range(0, height, chunk_rows):
         y_end = min(y + chunk_rows, height)
         chunk = np.array(mem_stack[:frame_count, y:y_end, :, :])
-        result[y:y_end, :, :] = np.median(chunk, axis=0)
+        if valid_mask_stack is None:
+            result[y:y_end, :, :] = np.median(chunk, axis=0)
+        else:
+            valid = _valid_chunk(valid_mask_stack, frame_count, y, y_end, chunk.shape)
+            result[y:y_end, :, :] = _masked_median(chunk, valid)
         if progress_cb:
             progress_cb((y_end / height) * 100.0)
 

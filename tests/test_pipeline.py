@@ -152,10 +152,58 @@ def test_alignment_registers_shifted_frame():
     reference = alignment.ReferenceFrame(make_light_frame(rng).astype(np.float32))
     shifted = make_light_frame(rng, shift_y=5, shift_x=-4).astype(np.float32)
 
-    aligned = reference.align(shifted)
+    result = reference.align(shifted)
 
-    assert aligned is not None
+    assert result is not None
+    aligned, valid_mask = result
     assert aligned.shape == reference.bgr.shape
+    assert valid_mask.shape == reference.bgr.shape[:2]
+    assert valid_mask.dtype == bool
+
+
+def test_warp_with_coverage_marks_border_fill_as_invalid():
+    # A pure translation shifts source content down/right by 10px -- the
+    # dst region nothing maps into (top-left 10px strip) should be marked
+    # invalid, while a dst region well within the shifted content should be
+    # fully valid.
+    bgr = np.full((40, 40, 3), 500.0, dtype=np.float32)
+    translation = np.array([[1.0, 0.0, 10.0], [0.0, 1.0, 10.0]], dtype=np.float32)
+
+    warped, valid_mask = alignment._warp_with_coverage(bgr, translation, 40, 40)
+
+    assert warped.shape == bgr.shape
+    assert valid_mask.shape == (40, 40)
+    assert valid_mask.dtype == bool
+    assert not valid_mask[:10, :10].any()  # nothing maps into this corner
+    assert valid_mask[20:, 20:].all()  # well within the shifted-in content
+
+
+def test_defringe_star_edges_pulls_purple_ring_toward_neutral():
+    img = np.full((60, 60, 3), 20.0, dtype=np.float32)  # dim sky background
+    img[25:35, 25:35] = [255.0, 255.0, 255.0]  # bright white star core
+    for row in range(60):
+        for col in range(60):
+            dist = ((row - 30) ** 2 + (col - 30) ** 2) ** 0.5
+            if 5 < dist < 12:
+                img[row, col] = [180.0, 40.0, 180.0]  # magenta-ish fringe ring (B, G, R)
+
+    fixed = color.defringe_star_edges(img)
+
+    ring_pixel = fixed[30, 38]  # inside the fringe ring, close to the core
+    assert ring_pixel[0] < 180.0 and ring_pixel[2] < 180.0  # B and R pulled down
+    assert abs(ring_pixel[0] - ring_pixel[2]) < abs(180.0 - 180.0) + 1e-6  # stays balanced
+
+
+def test_defringe_star_edges_leaves_distant_purple_color_untouched():
+    # A magenta/purple region far from any bright star (e.g. real nebula color)
+    # must not get desaturated -- only near-star fringing should be touched.
+    img = np.full((60, 60, 3), 20.0, dtype=np.float32)
+    img[25:30, 25:30] = [255.0, 255.0, 255.0]  # small bright star, top-left area
+    img[45:55, 45:55] = [150.0, 30.0, 150.0]  # magenta patch, far from the star
+
+    fixed = color.defringe_star_edges(img)
+
+    assert np.allclose(fixed[45:55, 45:55], img[45:55, 45:55])
 
 
 def test_run_pipeline_end_to_end(synthetic_dataset):

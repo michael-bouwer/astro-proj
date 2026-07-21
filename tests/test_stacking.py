@@ -14,6 +14,11 @@ def _stack(values):
     return np.array(values, dtype=np.float32).reshape(len(values), 1, 1, 1)
 
 
+def _coverage(valid_flags):
+    """Turns a flat list of per-frame booleans into a (N, 1, 1) valid_mask_stack-shaped array."""
+    return np.array(valid_flags, dtype=bool).reshape(len(valid_flags), 1, 1)
+
+
 def test_sigma_clip_combine_rejects_outliers_that_mean_std_would_miss():
     # 6 frames at one pixel: 4 clean values tightly clustered around 1000,
     # 2 "bad" frames (e.g. a satellite trail hitting the same pixel in two
@@ -117,3 +122,44 @@ def test_compute_frame_weights_weight_scales_with_linear_snr():
     weights, kept = compute_frame_weights(qualities, reject_sigma=3.0)
     assert kept.all()
     assert weights[2] == pytest.approx(weights[0] * 2, rel=0.05)
+
+
+def test_sigma_clip_combine_excludes_invalid_coverage_from_average():
+    # 3 clean frames around 1000, plus 2 frames whose warp didn't reach this
+    # pixel (border-fill 0, marked invalid) -- without coverage exclusion the
+    # two 0s would drag the average down; with it, the result should reflect
+    # only the 3 real frames.
+    mem_stack = _stack([1000, 1010, 990, 0, 0])
+    valid = _coverage([True, True, True, False, False])
+    result = sigma_clip_combine(mem_stack, 5, sigma=3.0, valid_mask_stack=valid)
+    assert result[0, 0, 0] == pytest.approx(1000.0, abs=1.0)
+
+
+def test_sigma_clip_combine_all_invalid_pixel_stays_zero_without_warning(recwarn):
+    mem_stack = _stack([0, 0, 0])
+    valid = _coverage([False, False, False])
+    result = sigma_clip_combine(mem_stack, 3, sigma=3.0, valid_mask_stack=valid)
+    assert result[0, 0, 0] == 0.0
+    assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn.list)
+
+
+def test_winsorized_sigma_clip_combine_excludes_invalid_coverage_from_average():
+    mem_stack = _stack([1000, 1010, 990, 1005, 0, 0])
+    valid = _coverage([True, True, True, True, False, False])
+    result = winsorized_sigma_clip_combine(mem_stack, 6, sigma=3.0, valid_mask_stack=valid)
+    assert result[0, 0, 0] == pytest.approx(1001.25, abs=1.0)
+
+
+def test_winsorized_sigma_clip_combine_all_invalid_pixel_stays_zero_without_warning(recwarn):
+    mem_stack = _stack([0, 0, 0])
+    valid = _coverage([False, False, False])
+    result = winsorized_sigma_clip_combine(mem_stack, 3, sigma=3.0, valid_mask_stack=valid)
+    assert result[0, 0, 0] == 0.0
+    assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn.list)
+
+
+def test_median_combine_excludes_invalid_coverage_from_median():
+    mem_stack = _stack([10, 20, 30, 0])
+    valid = _coverage([True, True, True, False])
+    result = median_combine(mem_stack, 4, valid_mask_stack=valid)
+    assert result[0, 0, 0] == 20.0  # median of [10, 20, 30], not [10, 20, 30, 0]
