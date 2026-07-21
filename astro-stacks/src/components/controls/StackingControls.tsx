@@ -1,5 +1,6 @@
 import { Button, Checkbox, NativeSelect, Slider, Text } from "@chakra-ui/react";
 import type { IntegrationMethod, JobStatus, RunParams } from "../../api/types";
+import { PipelineStepsList } from "./PipelineStepsList";
 import styles from "./StackingControls.module.scss";
 
 export function StackingControls({
@@ -7,12 +8,16 @@ export function StackingControls({
   onChange,
   onRun,
   running,
+  blockedByOtherWorkspace,
+  activeWorkspaceName,
   job,
 }: {
   params: RunParams;
   onChange: (params: RunParams) => void;
   onRun: () => void;
   running: boolean;
+  blockedByOtherWorkspace: boolean;
+  activeWorkspaceName: string | null;
   job: JobStatus | null;
 }) {
   return (
@@ -80,18 +85,32 @@ export function StackingControls({
         </Checkbox.Root>
       </div>
 
-      <Button colorPalette="brand" onClick={onRun} loading={running} className={styles.runButton}>
+      <Button
+        colorPalette="brand"
+        onClick={onRun}
+        loading={running}
+        disabled={blockedByOtherWorkspace}
+        className={styles.runButton}
+      >
         Run Stack
       </Button>
+      {blockedByOtherWorkspace && (
+        <Text className={styles.blockedMessage}>
+          Currently stacking "{activeWorkspaceName}" -- wait for it to finish first.
+        </Text>
+      )}
 
       {job && (
-        <div className={styles.progress}>
-          <Text className={styles.progressLine}>
-            [{job.stage ?? job.status}] {job.percent.toFixed(0)}%
-          </Text>
-          {job.message && <Text className={styles.progressMessage}>{job.message}</Text>}
-          {job.status === "error" && <Text className={styles.progressError}>{job.error}</Text>}
-        </div>
+        <>
+          <div className={styles.progress}>
+            <Text className={styles.progressLine}>
+              [{job.stage ?? job.status}] {job.percent.toFixed(0)}%
+            </Text>
+            {job.message && <Text className={styles.progressMessage}>{job.message}</Text>}
+            {job.status === "error" && <Text className={styles.progressError}>{job.error}</Text>}
+          </div>
+          <PipelineStepsList job={job} />
+        </>
       )}
     </div>
   );

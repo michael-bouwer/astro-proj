@@ -20,7 +20,38 @@ app.add_middleware(
 )
 
 loaded_masters = {}  # workspace_id -> linear float32 BGR ndarray, cached so the stretch controls don't hit disk every tick
-jobs = {}  # job_id -> {status, stage, percent, message, result, error, workspace_id}
+jobs = {}  # job_id -> {status, stage, percent, overall_percent, message, result, error, workspace_id}
+
+# Relative cost of each pipeline stage (pipeline/orchestrator.py's progress_cb
+# calls, in order), used to translate a stage's own 0-100% into one number for
+# the whole run -- aligning and stacking dominate real runtime, calibration/
+# reference/color are comparatively quick. Sums to 100; "done" maps to 100
+# directly rather than needing an entry here.
+STAGE_WEIGHTS = [
+    ("calibration", 10),
+    ("reference", 2),
+    ("aligning", 48),
+    ("stacking", 35),
+    ("color", 5),
+]
+_STAGE_STARTS = {}
+_cumulative = 0
+for _stage_name, _weight in STAGE_WEIGHTS:
+    _STAGE_STARTS[_stage_name] = _cumulative
+    _cumulative += _weight
+_STAGE_WEIGHT_BY_NAME = dict(STAGE_WEIGHTS)
+
+
+def _overall_percent(stage, percent):
+    if stage is None:
+        return 0.0
+    if stage == "done":
+        return 100.0
+    return _STAGE_STARTS.get(stage, 0) + (percent / 100.0) * _STAGE_WEIGHT_BY_NAME.get(stage, 0)
+
+
+def _active_job():
+    return next((j for j in jobs.values() if j["status"] in ("queued", "running")), None)
 
 # Primes psutil.cpu_percent's internal delta tracking at import time -- called
 # with interval=None (non-blocking), the first-ever call always returns a
@@ -178,9 +209,31 @@ def get_workspace_frames(workspace_id: str):
     return workspace.list_frames_in_workspace(workspace_id)
 
 
+@app.get("/workspaces/{workspace_id}/frames/preview")
+def get_workspace_frame_preview(workspace_id: str, kind: str, filename: str):
+    """Quick, low-res stretch of a single source frame -- for the Frames
+    panel's hover preview, not the main stacked preview. Small max_dimension
+    since this is a tooltip-sized thumbnail, not something to inspect detail in.
+    """
+    ws = _workspace_or_404(workspace_id)
+    if kind not in workspace.FRAME_KINDS:
+        raise HTTPException(status_code=400, detail=f"Unknown frame kind: {kind}")
+
+    # filename comes from the client as a query param -- os.path.basename strips
+    # any path components so it can't be used to escape the frames directory.
+    safe_filename = os.path.basename(filename)
+    frame_path = os.path.join(ws["source_path"], kind, safe_filename)
+    if not os.path.isfile(frame_path):
+        raise HTTPException(status_code=404, detail=f"Frame not found: {safe_filename}")
+
+    frame = raw_io.load_quick_preview(frame_path, max_dimension=220)
+    preview_u8 = stretch.to_uint8(frame, method="auto")
+    return Response(content=raw_io.encode_jpeg(preview_u8), media_type="image/jpeg")
+
+
 def _run_pipeline_job(job_id, workspace_id, source_path, output_dir, req: WorkspaceRunRequest):
     def progress_cb(stage, percent, message):
-        jobs[job_id].update(stage=stage, percent=percent, message=message)
+        jobs[job_id].update(stage=stage, percent=percent, overall_percent=_overall_percent(stage, percent), message=message)
 
     try:
         jobs[job_id].update(status="running")
@@ -194,7 +247,7 @@ def _run_pipeline_job(job_id, workspace_id, source_path, output_dir, req: Worksp
             progress_cb=progress_cb,
         )
         workspace.touch_workspace(workspace_id)
-        jobs[job_id].update(status="done", percent=100, result=result)
+        jobs[job_id].update(status="done", percent=100, overall_percent=100.0, result=result)
     except Exception as exc:
         jobs[job_id].update(status="error", error=str(exc))
 
@@ -202,11 +255,19 @@ def _run_pipeline_job(job_id, workspace_id, source_path, output_dir, req: Worksp
 @app.post("/workspaces/{workspace_id}/pipeline/run")
 def run_workspace_pipeline(workspace_id: str, req: WorkspaceRunRequest, background_tasks: BackgroundTasks):
     ws = _workspace_or_404(workspace_id)
+    active = _active_job()
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A stacking run is already in progress in another workspace. Wait for it to finish first.",
+        )
+
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
         "status": "queued",
         "stage": None,
         "percent": 0,
+        "overall_percent": 0,
         "message": None,
         "result": None,
         "error": None,

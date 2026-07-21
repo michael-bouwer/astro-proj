@@ -102,8 +102,7 @@ def run_pipeline(
     successful = 1
     # Per-frame SNR (dB), parallel to the frames actually written into
     # mem_stack -- feeds compute_frame_weights below so a frame's measured
-    # quality controls how much it counts toward the combine, the same way
-    # DSS's/PixInsight's weighted integration works.
+    # quality controls how much it counts toward the combine.
     qualities = [color.estimate_snr(reference.bgr)]
 
     try:

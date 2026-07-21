@@ -56,3 +56,9 @@
     opacity: 1;
   }
 }
+
+.tabSpinner {
+  flex-shrink: 0;
+  margin-left: 12px;
+  color: var(--chakra-colors-brand-fg);
+}

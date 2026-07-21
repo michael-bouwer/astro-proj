@@ -1,6 +1,7 @@
 import type {
   EffectsParams,
   ExportParams,
+  FrameKind,
   JobStatus,
   MasterDimensions,
   RunParams,
@@ -59,6 +60,11 @@ export function deleteWorkspace(workspaceId: string): Promise<{ status: string }
 
 export function getWorkspaceFrames(workspaceId: string): Promise<WorkspaceFrames> {
   return request(`/workspaces/${workspaceId}/frames`);
+}
+
+export function framePreviewUrl(workspaceId: string, kind: FrameKind, filename: string): string {
+  const query = new URLSearchParams({ kind, filename });
+  return `${API_BASE}/workspaces/${workspaceId}/frames/preview?${query.toString()}`;
 }
 
 export function runPipeline(workspaceId: string, params: RunParams): Promise<{ job_id: string }> {

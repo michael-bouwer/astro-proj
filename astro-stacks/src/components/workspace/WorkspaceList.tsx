@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Heading, IconButton, Spinner, Text } from "@chakra-ui/react";
 import { ApiError, deleteWorkspace, listWorkspaces } from "../../api/client";
 import type { Workspace } from "../../api/types";
+import { usePipelineJobs } from "../../state/PipelineJobsContext";
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import styles from "./WorkspaceList.module.scss";
@@ -56,6 +57,8 @@ export function WorkspaceList({
   const [deletingWorkspace, setDeletingWorkspace] = useState<Workspace | null>(
     null,
   );
+
+  const { activeWorkspaceId } = usePipelineJobs();
 
   const refresh = () => {
     listWorkspaces()
@@ -127,19 +130,26 @@ export function WorkspaceList({
                 if (e.key === "Enter" || e.key === " ") onOpenWorkspace(ws);
               }}
             >
-              <span
-                className={styles.badge}
-                style={{
-                  background: ws.has_master
-                    ? "var(--chakra-colors-brand-subtle)"
-                    : "var(--chakra-colors-yellow-800)",
-                  color: ws.has_master
-                    ? "var(--chakra-colors-brand-fg)"
-                    : "var(--chakra-colors-yellow-100)",
-                }}
-              >
-                {ws.has_master ? "Stacked" : "In Progress"}
-              </span>
+              {activeWorkspaceId === ws.id ? (
+                <span className={`${styles.badge} ${styles.badgeStacking}`}>
+                  <Spinner size="xs" />
+                  Stacking...
+                </span>
+              ) : (
+                <span
+                  className={styles.badge}
+                  style={{
+                    background: ws.has_master
+                      ? "var(--chakra-colors-brand-subtle)"
+                      : "var(--chakra-colors-yellow-800)",
+                    color: ws.has_master
+                      ? "var(--chakra-colors-brand-fg)"
+                      : "var(--chakra-colors-yellow-100)",
+                  }}
+                >
+                  {ws.has_master ? "Stacked" : "In Progress"}
+                </span>
+              )}
 
               <div className={styles.cardActions}>
                 <IconButton

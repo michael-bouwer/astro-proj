@@ -19,14 +19,13 @@ astro-proj/
 ```
 
 Everything is organized around **workspaces**. A workspace points at a frames
-folder anywhere on disk (must contain a `lights/` subfolder, optionally
-`darks/`, `flats/`, `biases/`) — the folder is referenced in place, never
-copied, since real capture sessions can be many gigabytes. Each workspace's own
-bookkeeping (the stacked linear master, saved version exports, metadata) lives
-under `astro-stacks/workspaces/<workspace-id>/`, kept separate from your
-capture data. Create a workspace from the app's "New Workspace" button (native
-folder picker in the desktop app; a plain path field when running in a
-browser), or via `POST /workspaces`.
+folder anywhere on disk — see "Point a workspace at your frames" below for
+what that folder needs to contain. Each workspace's own bookkeeping (the
+stacked linear master, saved version exports, metadata) lives under
+`astro-stacks/workspaces/<workspace-id>/`, kept separate from your capture
+data. Create a workspace from the app's "New Workspace" button (native folder
+picker in the desktop app; a plain path field when running in a browser), or
+via `POST /workspaces`.
 
 ## Prerequisites
 
@@ -212,14 +211,13 @@ pnpm dev          # run the UI in a browser against the live backend for manual 
 ```
 
 There's no frontend test suite yet — UI changes are verified manually against
-the running backend (`pnpm dev` + `uvicorn api:app --reload`).
+the running backend (see "Running the dev environments" above).
 
 ## Common gotchas
 
-- A workspace's `source_path` is referenced in place, not copied — if you
-  move or delete that folder, the workspace's frame counts and future runs
-  will fail (existing saved versions are unaffected, since those live under
-  `astro-stacks/workspaces/<id>/`).
+- If you move or delete a workspace's source frames folder after creating it,
+  its frame counts and future runs will fail (existing saved versions are
+  unaffected, since those live under `astro-stacks/workspaces/<id>/`).
 - The pipeline needs at least 2 light frames to stack. `apply_dark` /
   `apply_flat` are independent toggles — each is skipped gracefully if the
   corresponding `darks/`/`flats/` folder is missing or empty, regardless of

@@ -23,6 +23,8 @@ export function ControlsPanel({
   onRunParamsChange,
   onRun,
   running,
+  blockedByOtherWorkspace,
+  activeWorkspaceName,
   job,
   stretchParams,
   onStretchParamsChange,
@@ -48,6 +50,8 @@ export function ControlsPanel({
   onRunParamsChange: (params: RunParams) => void;
   onRun: () => void;
   running: boolean;
+  blockedByOtherWorkspace: boolean;
+  activeWorkspaceName: string | null;
   job: JobStatus | null;
   stretchParams: StretchParams;
   onStretchParamsChange: (params: StretchParams) => void;
@@ -78,7 +82,15 @@ export function ControlsPanel({
           <Tabs.Trigger value="export">Export</Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="stacking">
-          <StackingControls params={runParams} onChange={onRunParamsChange} onRun={onRun} running={running} job={job} />
+          <StackingControls
+            params={runParams}
+            onChange={onRunParamsChange}
+            onRun={onRun}
+            running={running}
+            blockedByOtherWorkspace={blockedByOtherWorkspace}
+            activeWorkspaceName={activeWorkspaceName}
+            job={job}
+          />
         </Tabs.Content>
         <Tabs.Content value="stretch">
           <StretchControls params={stretchParams} onChange={onStretchParamsChange} />

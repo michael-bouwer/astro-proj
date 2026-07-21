@@ -1,4 +1,5 @@
-import { CloseButton } from "@chakra-ui/react";
+import { CloseButton, Spinner } from "@chakra-ui/react";
+import { usePipelineJobs } from "../../state/PipelineJobsContext";
 import styles from "./TabBar.module.scss";
 
 export type OpenTab = {
@@ -21,6 +22,8 @@ export function TabBar({
   onSelect: (workspaceId: string) => void;
   onClose: (workspaceId: string) => void;
 }) {
+  const { activeWorkspaceId } = usePipelineJobs();
+
   return (
     <nav className={styles.bar}>
       <button
@@ -36,6 +39,9 @@ export function TabBar({
           key={tab.workspaceId}
           className={`${styles.tab} ${activeTabId === tab.workspaceId ? styles.tabActive : ""}`}
         >
+          {activeWorkspaceId === tab.workspaceId && (
+            <Spinner size="xs" className={styles.tabSpinner} aria-label="Stacking" />
+          )}
           <button
             type="button"
             className={styles.tabLabel}

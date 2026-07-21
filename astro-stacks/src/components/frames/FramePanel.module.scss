@@ -68,3 +68,26 @@
   color: var(--chakra-colors-fg-muted);
   font-style: italic;
 }
+
+// Anchored via inline `top` (the hovered row's own position) computed in
+// FramePanel.tsx; `left` is fixed to just past this panel's own 260px width
+// (astro-stacks/src/components/workspace/WorkspaceDetail.module.scss's grid)
+// so it floats over the preview panel rather than the frame list itself.
+.hoverPreview {
+  position: fixed;
+  left: 272px;
+  z-index: 20;
+  padding: 4px;
+  background: var(--chakra-colors-bg-panel);
+  border: 1px solid var(--chakra-colors-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.hoverPreviewImage {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 4px;
+}

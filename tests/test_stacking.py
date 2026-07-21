@@ -57,7 +57,7 @@ def test_winsorized_sigma_clip_combine_rejects_a_single_extreme_outlier():
     # 7 clean frames around 1000 plus one extreme outlier at 8000 -- a more
     # realistic single-bad-frame scenario (unlike the 2-of-6 case above,
     # which is a heavier contamination fraction than sigma-clip-family
-    # methods, including PixInsight's own, are expected to handle).
+    # methods are expected to handle).
     mem_stack = _stack([1000, 1005, 995, 1010, 990, 1002, 998, 8000])
     result = winsorized_sigma_clip_combine(mem_stack, 8, sigma=3.0)
     assert result[0, 0, 0] < 1100  # anchored to the clean cluster, not dragged up by the outlier

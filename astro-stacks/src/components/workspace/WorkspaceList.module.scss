@@ -80,6 +80,14 @@
   border-radius: 999px;
 }
 
+.badgeStacking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--chakra-colors-brand-subtle);
+  color: var(--chakra-colors-brand-fg);
+}
+
 .cardActions {
   position: absolute;
   top: 8px;

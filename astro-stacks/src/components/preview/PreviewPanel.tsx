@@ -67,7 +67,10 @@ export function PreviewPanel({
               />
             )}
             <div className={styles.scrim}>
-              <span className={styles.percentText}>{Math.round(job.percent)}%</span>
+              {/* Overall progress across the whole pipeline, not just the
+                  current stage's own 0-100% -- the right-hand panel's
+                  [stage] X% readout is the per-step one. */}
+              <span className={styles.percentText}>{Math.round(job.overall_percent)}%</span>
               {job.message && <span className={styles.stageText}>{job.message}</span>}
             </div>
           </div>

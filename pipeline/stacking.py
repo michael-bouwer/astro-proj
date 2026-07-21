@@ -4,9 +4,8 @@ Frame arrays for a full session (dozens of 16-bit multi-megapixel frames) don't
 reliably fit in RAM, so the stack is built on a memory-mapped temp file and
 combined a horizontal chunk (row band) at a time.
 
-Two rejection algorithms are offered, both modeled on how PixInsight/Siril/
-DeepSkyStacker actually implement them (not just "average with a sigma
-threshold"):
+Two rejection algorithms are offered, going beyond a plain "average with a
+sigma threshold":
 
   - sigma_clip_combine: iterative, median/MAD-based (robust) sigma clipping.
     Centering on the median with a robust spread estimate (rather than mean/
@@ -14,17 +13,15 @@ threshold"):
     catches hot pixels / cosmic rays / satellite trails that a single mean/std
     pass can miss when one bad value is enough to inflate std past the point
     of rejecting anything.
-  - winsorized_sigma_clip_combine: PixInsight's default rejection algorithm.
-    Estimates a robust std by "winsorizing" (capping, not discarding) outliers
-    over a few passes, then does one real rejection pass against that
-    estimate -- a different, complementary way of getting a std estimate the
-    outliers themselves can't skew.
+  - winsorized_sigma_clip_combine: estimates a robust std by "winsorizing"
+    (capping, not discarding) outliers over a few passes, then does one real
+    rejection pass against that estimate -- a different, complementary way of
+    getting a std estimate the outliers themselves can't skew.
 
 Both accept an optional per-frame `weights` array (see compute_frame_weights)
 so a frame's measured quality controls how much it contributes to the final
-average, the same way DSS's/PixInsight's weighted integration does -- a weight
-of 0 excludes a frame from the output without needing to physically remove it
-from the memmap.
+average -- a weight of 0 excludes a frame from the output without needing to
+physically remove it from the memmap.
 """
 import gc
 import os
@@ -183,17 +180,16 @@ def sigma_clip_combine(mem_stack, frame_count, sigma=3.0, iterations=3, weights=
 
 
 def winsorized_sigma_clip_combine(mem_stack, frame_count, sigma=3.0, winsorize_iterations=3, weights=None, chunk_rows=100, progress_cb=None):
-    """PixInsight-style Winsorized Sigma Clipping: winsorizes (caps, doesn't
-    discard) values outside the current mean/std over a few passes to get a
-    std estimate that isn't itself skewed by the outliers it's meant to
-    reject, then does one real rejection pass against that robust estimate.
+    """Winsorized Sigma Clipping: winsorizes (caps, doesn't discard) values
+    outside the current mean/std over a few passes to get a std estimate
+    that isn't itself skewed by the outliers it's meant to reject, then does
+    one real rejection pass against that robust estimate.
 
     Seeded from a robust median/MAD estimate rather than the raw mean/std:
     with a small frame count, a single extreme outlier can inflate the raw
     std enough that even the first winsorizing pass's bounds stay wide
     enough to never actually cap it, which stalls every later iteration at
-    that same contaminated starting point. Seeding from a robust estimate is
-    standard practice for exactly this bootstrapping problem.
+    that same contaminated starting point.
     """
     _, height, width, channels = mem_stack.shape
     result = np.zeros((height, width, channels), dtype=np.float32)

@@ -3,6 +3,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { TabBar, type OpenTab } from "./components/layout/TabBar";
 import { WorkspaceList } from "./components/workspace/WorkspaceList";
 import { WorkspaceDetail } from "./components/workspace/WorkspaceDetail";
+import { PipelineJobsProvider } from "./state/PipelineJobsContext";
 import type { Workspace } from "./api/types";
 import styles from "./App.module.scss";
 
@@ -46,43 +47,45 @@ function App() {
   };
 
   return (
-    <AppShell
-      onTitleClick={() => setActiveTabId(null)}
-      tabBar={
-        <TabBar
-          tabs={openTabs}
-          activeTabId={activeTabId}
-          isHomeActive={activeTabId === null}
-          onSelectHome={() => setActiveTabId(null)}
-          onSelect={setActiveTabId}
-          onClose={closeTab}
-        />
-      }
-    >
-      <div className={activeTabId === null ? styles.panel : styles.panelHidden}>
-        <WorkspaceList
-          active={activeTabId === null}
-          onOpenWorkspace={openWorkspace}
-          onWorkspaceDeleted={closeTab}
-          onWorkspaceRenamed={renameTab}
-        />
-      </div>
-
-      {openTabs.map((tab) => (
-        <div
-          key={tab.workspaceId}
-          className={
-            activeTabId === tab.workspaceId ? styles.panel : styles.panelHidden
-          }
-        >
-          <WorkspaceDetail
-            workspaceId={tab.workspaceId}
-            onDeleted={() => closeTab(tab.workspaceId)}
-            onRenamed={renameTab}
+    <PipelineJobsProvider>
+      <AppShell
+        onTitleClick={() => setActiveTabId(null)}
+        tabBar={
+          <TabBar
+            tabs={openTabs}
+            activeTabId={activeTabId}
+            isHomeActive={activeTabId === null}
+            onSelectHome={() => setActiveTabId(null)}
+            onSelect={setActiveTabId}
+            onClose={closeTab}
+          />
+        }
+      >
+        <div className={activeTabId === null ? styles.panel : styles.panelHidden}>
+          <WorkspaceList
+            active={activeTabId === null}
+            onOpenWorkspace={openWorkspace}
+            onWorkspaceDeleted={closeTab}
+            onWorkspaceRenamed={renameTab}
           />
         </div>
-      ))}
-    </AppShell>
+
+        {openTabs.map((tab) => (
+          <div
+            key={tab.workspaceId}
+            className={
+              activeTabId === tab.workspaceId ? styles.panel : styles.panelHidden
+            }
+          >
+            <WorkspaceDetail
+              workspaceId={tab.workspaceId}
+              onDeleted={() => closeTab(tab.workspaceId)}
+              onRenamed={renameTab}
+            />
+          </div>
+        ))}
+      </AppShell>
+    </PipelineJobsProvider>
   );
 }
 

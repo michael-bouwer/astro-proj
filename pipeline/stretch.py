@@ -1,12 +1,12 @@
 """Nonlinear display stretches, applied on demand -- never baked into the saved master.
 
 Three options:
-  - auto: PixInsight/Siril-style auto-stretch. Black point and midtone are derived
-    from the image's own median/MAD rather than a fixed constant, so it looks
-    reasonable regardless of how dim the underlying linear signal is. This is the
-    default for a reason: a fixed midtone (e.g. "0.25") only looks right for the
-    specific signal level it was tuned against -- too weak and the preview reads
-    as black, too strong and it's blown out. Default method for /preview.
+  - auto: black point and midtone are derived from the image's own median/MAD
+    rather than a fixed constant, so it looks reasonable regardless of how dim
+    the underlying linear signal is. This is the default for a reason: a fixed
+    midtone (e.g. "0.25") only looks right for the specific signal level it
+    was tuned against -- too weak and the preview reads as black, too strong
+    and it's blown out. Default method for /preview.
   - mtf: manual midtone transfer function, single midtone parameter, for
     fine-tuning once you're past the initial "does this look like anything" step.
   - asinh: compresses bright star cores less aggressively than MTF/log, which is
@@ -42,8 +42,7 @@ def _solve_midtone(x, target):
 def auto_stretch(bgr_f32, target_bkg=0.25, shadow_clip=-2.8):
     """Derives black point + midtone from the image's own median/MAD (linked
     across channels, so the color calibration already applied isn't disturbed),
-    then applies the standard MTF curve. Matches PixInsight's ScreenTransferFunction
-    auto-stretch / Siril's autostretch algorithm.
+    then applies the standard MTF curve.
     """
     normalized = _normalize(bgr_f32)
     median = float(np.median(normalized))

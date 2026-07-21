@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Text } from "@chakra-ui/react";
-import { ApiError, deleteWorkspace, getJobStatus, getWorkspace, loadMaster, runPipeline } from "../../api/client";
+import { ApiError, deleteWorkspace, getWorkspace, loadMaster } from "../../api/client";
 import {
   DEFAULT_EFFECTS_PARAMS,
   type EffectsParams,
-  type JobStatus,
+  type JobStatusValue,
   type MasterDimensions,
   type RunParams,
   type RunResult,
@@ -13,6 +13,7 @@ import {
   type Version,
   type Workspace,
 } from "../../api/types";
+import { usePipelineJobs } from "../../state/PipelineJobsContext";
 import { FramePanel } from "../frames/FramePanel";
 import { PreviewPanel } from "../preview/PreviewPanel";
 import { ControlsPanel } from "../controls/ControlsPanel";
@@ -66,7 +67,9 @@ export function WorkspaceDetail({
   const [cropEditing, setCropEditing] = useState(false);
   const [activeControlsTab, setActiveControlsTab] = useState("stacking");
 
-  const [job, setJob] = useState<JobStatus | null>(null);
+  const { activeWorkspaceId, activeWorkspaceName, getJob, getLastRunParams, startRun } = usePipelineJobs();
+  const job = getJob(workspaceId);
+
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [masterLoaded, setMasterLoaded] = useState(false);
   const [masterDimensions, setMasterDimensions] = useState<MasterDimensions | null>(null);
@@ -75,7 +78,7 @@ export function WorkspaceDetail({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevJobStatusRef = useRef<JobStatusValue | undefined>(undefined);
 
   const refreshWorkspace = () => {
     getWorkspace(workspaceId)
@@ -104,12 +107,6 @@ export function WorkspaceDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace?.has_master]);
 
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
   // Leaving the Crop tab mid-edit discards the in-progress (uncommitted) crop
   // rather than leaving stale editing UI active behind another tab.
   useEffect(() => {
@@ -119,36 +116,39 @@ export function WorkspaceDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeControlsTab]);
 
+  // Job polling itself lives in PipelineJobsContext (shared across every open
+  // workspace, since only one can run at a time) -- this only reacts to the
+  // moment *this* workspace's job finishes, to do the workspace-specific
+  // follow-up (load the freshly-written master, refresh frame counts, etc).
+  // Keyed off the status transition (via a ref) rather than every job update,
+  // since `job` stays referentially stable once terminal but this component
+  // never unmounts on tab switches.
+  useEffect(() => {
+    const prevStatus = prevJobStatusRef.current;
+    prevJobStatusRef.current = job?.status;
+
+    if (job?.status === "done" && prevStatus !== "done") {
+      setRunResult(job.result);
+      setLastCompletedRunParams(getLastRunParams(workspaceId));
+      loadMaster(workspaceId)
+        .then((loaded) => {
+          setMasterLoaded(true);
+          setMasterDimensions({ width: loaded.width, height: loaded.height });
+          setPreviewVersion((v) => v + 1);
+          refreshWorkspace();
+        })
+        .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load master after stacking"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status]);
+
   const handleRun = async () => {
+    if (!workspace) return;
     setError("");
     try {
-      const { job_id } = await runPipeline(workspaceId, runParams);
-      setJob({ status: "queued", stage: null, percent: 0, message: null, result: null, error: null, workspace_id: workspaceId });
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const status = await getJobStatus(workspaceId, job_id);
-          setJob(status);
-
-          if (status.status === "done") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setRunResult(status.result);
-            setLastCompletedRunParams(runParams);
-            const loaded = await loadMaster(workspaceId);
-            setMasterLoaded(true);
-            setMasterDimensions({ width: loaded.width, height: loaded.height });
-            setPreviewVersion((v) => v + 1);
-            refreshWorkspace();
-          } else if (status.status === "error") {
-            if (pollRef.current) clearInterval(pollRef.current);
-          }
-        } catch (err) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setError(err instanceof ApiError ? err.message : "Failed to poll job status");
-        }
-      }, 1000);
+      await startRun(workspaceId, workspace.name, runParams);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to start pipeline");
+      setError(err instanceof ApiError || err instanceof Error ? err.message : "Failed to start pipeline");
     }
   };
 
@@ -178,6 +178,7 @@ export function WorkspaceDetail({
   };
 
   const running = job?.status === "queued" || job?.status === "running";
+  const blockedByOtherWorkspace = activeWorkspaceId !== null && activeWorkspaceId !== workspaceId;
 
   if (error && !workspace) {
     return <Text className={styles.error}>{error}</Text>;
@@ -221,6 +222,8 @@ export function WorkspaceDetail({
           onRunParamsChange={setRunParams}
           onRun={handleRun}
           running={running}
+          blockedByOtherWorkspace={blockedByOtherWorkspace}
+          activeWorkspaceName={activeWorkspaceName}
           job={job}
           stretchParams={stretchParams}
           onStretchParamsChange={setStretchParams}

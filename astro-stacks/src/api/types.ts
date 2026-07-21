@@ -22,6 +22,8 @@ export type WorkspaceFrames = {
   biases: string[];
 };
 
+export type FrameKind = keyof WorkspaceFrames;
+
 export type IntegrationMethod = "sigma_clip" | "winsorized_sigma_clip" | "median";
 
 export type RunParams = {
@@ -55,6 +57,10 @@ export type JobStatus = {
   status: JobStatusValue;
   stage: string | null;
   percent: number;
+  // Weighted 0-100 across the whole pipeline (calibration/reference/aligning/
+  // stacking/color), not just the current stage -- `percent` above stays
+  // per-stage (resets to 0 at each stage boundary) for the step-by-step readout.
+  overall_percent: number;
   message: string | null;
   result: RunResult | null;
   error: string | null;

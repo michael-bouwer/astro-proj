@@ -45,6 +45,12 @@
   margin-top: 4px;
 }
 
+.blockedMessage {
+  font-size: 0.78rem;
+  color: var(--chakra-colors-fg-muted);
+  margin-top: -4px;
+}
+
 .progress {
   display: flex;
   flex-direction: column;
@@ -62,4 +68,47 @@
 
 .progressError {
   color: var(--chakra-colors-red-fg);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.tickDone {
+  color: var(--chakra-colors-green-fg);
+  font-weight: 700;
+  width: 1em;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.tickPending {
+  color: var(--chakra-colors-fg-muted);
+  width: 1em;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.stepLabel {
+  color: var(--chakra-colors-fg-muted);
+}
+
+.stepLabelCurrent {
+  color: var(--chakra-colors-fg);
+  font-weight: 700;
+}
+
+.stepLabelError {
+  color: var(--chakra-colors-red-fg);
+  font-weight: 700;
 }

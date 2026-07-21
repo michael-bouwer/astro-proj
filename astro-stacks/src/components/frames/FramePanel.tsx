@@ -1,22 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Heading, Text } from "@chakra-ui/react";
-import { ApiError, getWorkspaceFrames } from "../../api/client";
-import type { WorkspaceFrames } from "../../api/types";
+import { ApiError, framePreviewUrl, getWorkspaceFrames } from "../../api/client";
+import type { FrameKind, WorkspaceFrames } from "../../api/types";
 import styles from "./FramePanel.module.scss";
 
-const KIND_LABELS: Record<keyof WorkspaceFrames, string> = {
+const KIND_LABELS: Record<FrameKind, string> = {
   lights: "Lights",
   darks: "Darks",
   flats: "Flats",
   biases: "Biases",
 };
 
-const KINDS = Object.keys(KIND_LABELS) as (keyof WorkspaceFrames)[];
+const KINDS = Object.keys(KIND_LABELS) as FrameKind[];
+
+const HOVER_DELAY_MS = 250;
+
+type HoveredFrame = { kind: FrameKind; filename: string; top: number };
 
 export function FramePanel({ workspaceId }: { workspaceId: string }) {
   const [frames, setFrames] = useState<WorkspaceFrames | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hoveredFrame, setHoveredFrame] = useState<HoveredFrame | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = () => {
     setLoading(true);
@@ -29,7 +36,28 @@ export function FramePanel({ workspaceId }: { workspaceId: string }) {
 
   useEffect(refresh, [workspaceId]);
 
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    };
+  }, []);
+
   const total = frames ? KINDS.reduce((sum, kind) => sum + frames[kind].length, 0) : 0;
+
+  const handleEnter = (kind: FrameKind, filename: string, top: number) => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    // Debounced so sweeping the mouse down a long list doesn't fire a raw
+    // decode per row it passes over -- only the row the cursor settles on.
+    hoverTimeoutRef.current = setTimeout(() => {
+      setPreviewFailed(false);
+      setHoveredFrame({ kind, filename, top });
+    }, HOVER_DELAY_MS);
+  };
+
+  const handleLeave = () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    setHoveredFrame(null);
+  };
 
   return (
     <div className={styles.panel}>
@@ -51,7 +79,12 @@ export function FramePanel({ workspaceId }: { workspaceId: string }) {
               </Text>
               <ul className={styles.fileList}>
                 {frames[kind].map((filename) => (
-                  <li key={filename} className={styles.fileItem}>
+                  <li
+                    key={filename}
+                    className={styles.fileItem}
+                    onMouseEnter={(e) => handleEnter(kind, filename, e.currentTarget.getBoundingClientRect().top)}
+                    onMouseLeave={handleLeave}
+                  >
                     {filename}
                   </li>
                 ))}
@@ -59,6 +92,17 @@ export function FramePanel({ workspaceId }: { workspaceId: string }) {
               </ul>
             </div>
           ))}
+        </div>
+      )}
+
+      {hoveredFrame && !previewFailed && (
+        <div className={styles.hoverPreview} style={{ top: hoveredFrame.top }}>
+          <img
+            className={styles.hoverPreviewImage}
+            src={framePreviewUrl(workspaceId, hoveredFrame.kind, hoveredFrame.filename)}
+            alt={hoveredFrame.filename}
+            onError={() => setPreviewFailed(true)}
+          />
         </div>
       )}
     </div>
