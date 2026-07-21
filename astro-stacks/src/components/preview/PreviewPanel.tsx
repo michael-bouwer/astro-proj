@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Text } from "@chakra-ui/react";
 import { previewUrl, referencePreviewUrl } from "../../api/client";
-import type { JobStatus, MasterDimensions, RunResult, StretchParams, TransformParams } from "../../api/types";
+import type { EffectsParams, JobStatus, MasterDimensions, RunResult, StretchParams, TransformParams } from "../../api/types";
 import { StatBar } from "./StatBar";
 import { CropRotateOverlay } from "./CropRotateOverlay";
 import styles from "./PreviewPanel.module.scss";
@@ -12,6 +12,7 @@ export function PreviewPanel({
   workspaceId,
   masterLoaded,
   stretchParams,
+  effectsParams,
   transformParams,
   cropEditing,
   pendingTransform,
@@ -24,6 +25,7 @@ export function PreviewPanel({
   workspaceId: string;
   masterLoaded: boolean;
   stretchParams: StretchParams;
+  effectsParams: EffectsParams;
   transformParams: TransformParams;
   cropEditing: boolean;
   pendingTransform: TransformParams;
@@ -42,10 +44,12 @@ export function PreviewPanel({
   // slider tick), and the crop box's 0-1 coordinate space is defined against
   // this same unrotated canvas, matching how pipeline/transform.py crops
   // *after* rotating. The real crop/rotation is only rendered server-side
-  // (and only then reflected here) once "Apply Cropping" commits it.
+  // (and only then reflected here) once "Apply Cropping" commits it. Effects
+  // stay live either way, so brightness/contrast/etc. are still visible while
+  // adjusting a crop.
   const imageSrc = cropEditing
-    ? previewUrl(workspaceId, stretchParams, previewVersion, UNROTATED)
-    : previewUrl(workspaceId, stretchParams, previewVersion, transformParams);
+    ? previewUrl(workspaceId, stretchParams, previewVersion, UNROTATED, effectsParams)
+    : previewUrl(workspaceId, stretchParams, previewVersion, transformParams, effectsParams);
 
   return (
     <div className={styles.panel}>

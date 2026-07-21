@@ -1,5 +1,6 @@
 import { Tabs } from "@chakra-ui/react";
 import type {
+  EffectsParams,
   JobStatus,
   MasterDimensions,
   RunParams,
@@ -10,6 +11,7 @@ import type {
 } from "../../api/types";
 import { StackingControls } from "./StackingControls";
 import { StretchControls } from "./StretchControls";
+import { EffectsControls } from "./EffectsControls";
 import { CropRotateControls } from "./CropRotateControls";
 import { ExportControls } from "./ExportControls";
 import styles from "./ControlsPanel.module.scss";
@@ -24,6 +26,8 @@ export function ControlsPanel({
   job,
   stretchParams,
   onStretchParamsChange,
+  effectsParams,
+  onEffectsParamsChange,
   transformParams,
   pendingTransform,
   onPendingChange,
@@ -47,6 +51,8 @@ export function ControlsPanel({
   job: JobStatus | null;
   stretchParams: StretchParams;
   onStretchParamsChange: (params: StretchParams) => void;
+  effectsParams: EffectsParams;
+  onEffectsParamsChange: (params: EffectsParams) => void;
   transformParams: TransformParams;
   pendingTransform: TransformParams;
   onPendingChange: (params: TransformParams) => void;
@@ -67,6 +73,7 @@ export function ControlsPanel({
         <Tabs.List className={styles.tabList}>
           <Tabs.Trigger value="stacking">Stacking</Tabs.Trigger>
           <Tabs.Trigger value="stretch">Stretch</Tabs.Trigger>
+          <Tabs.Trigger value="effects">Effects</Tabs.Trigger>
           <Tabs.Trigger value="crop">Crop</Tabs.Trigger>
           <Tabs.Trigger value="export">Export</Tabs.Trigger>
         </Tabs.List>
@@ -75,6 +82,9 @@ export function ControlsPanel({
         </Tabs.Content>
         <Tabs.Content value="stretch">
           <StretchControls params={stretchParams} onChange={onStretchParamsChange} />
+        </Tabs.Content>
+        <Tabs.Content value="effects">
+          <EffectsControls params={effectsParams} onChange={onEffectsParamsChange} />
         </Tabs.Content>
         <Tabs.Content value="crop">
           <CropRotateControls
@@ -97,6 +107,7 @@ export function ControlsPanel({
             masterLoaded={masterLoaded}
             masterDimensions={masterDimensions}
             stretchParams={stretchParams}
+            effectsParams={effectsParams}
             transformParams={transformParams}
             runParams={lastCompletedRunParams}
             runResult={runResult}

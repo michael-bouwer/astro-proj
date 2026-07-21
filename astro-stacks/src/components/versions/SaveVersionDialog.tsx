@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Checkbox, Dialog, Portal, Text, Textarea } from "@chakra-ui/react";
 import { ApiError, saveVersion } from "../../api/client";
-import type { RunParams, SaveVersionParams, StretchParams, TransformParams, Version } from "../../api/types";
+import type { EffectsParams, RunParams, SaveVersionParams, StretchParams, TransformParams, Version } from "../../api/types";
 import styles from "./SaveVersionDialog.module.scss";
 
 export function SaveVersionDialog({
@@ -9,6 +9,7 @@ export function SaveVersionDialog({
   onClose,
   workspaceId,
   stretchParams,
+  effectsParams,
   transformParams,
   runParams,
   onSaved,
@@ -17,6 +18,7 @@ export function SaveVersionDialog({
   onClose: () => void;
   workspaceId: string;
   stretchParams: StretchParams;
+  effectsParams: EffectsParams;
   transformParams: TransformParams;
   runParams: RunParams | null;
   onSaved: (version: Version) => void;
@@ -38,6 +40,7 @@ export function SaveVersionDialog({
     try {
       const params: SaveVersionParams = {
         ...stretchParams,
+        ...effectsParams,
         note: note.trim(),
         fix_halos: fixHalos,
         ...(runParams ?? {}),

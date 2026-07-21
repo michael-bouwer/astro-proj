@@ -80,23 +80,41 @@ export type TransformParams = {
   crop: CropRect | null;
 };
 
-export type SaveVersionParams = StretchParams & {
-  note: string;
-  fix_halos: boolean;
-  // Stacking params that produced the currently loaded master -- recorded
-  // alongside the stretch settings so the note's "what changed" is meaningful
-  // across iterations, not just the display stretch.
-  sigma?: number;
-  apply_dark?: boolean;
-  apply_flat?: boolean;
-  integration_method?: IntegrationMethod;
-  // Non-destructive crop/rotate applied on top of the linear master.
-  rotation: number;
-  crop_x?: number;
-  crop_y?: number;
-  crop_width?: number;
-  crop_height?: number;
+// Simple display-space post-processing (brightness/contrast/saturation/sharpen),
+// applied last -- after stretch and halo-fix. Each field's neutral/no-op value
+// matches the backend's default (pipeline/effects.py).
+export type EffectsParams = {
+  brightness: number; // -1..1, 0 = unchanged
+  contrast: number; // -1..1, 0 = unchanged
+  saturation: number; // 0..2, 1 = unchanged
+  sharpen: number; // 0..1, 0 = unchanged
 };
+
+export const DEFAULT_EFFECTS_PARAMS: EffectsParams = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 1,
+  sharpen: 0,
+};
+
+export type SaveVersionParams = StretchParams &
+  EffectsParams & {
+    note: string;
+    fix_halos: boolean;
+    // Stacking params that produced the currently loaded master -- recorded
+    // alongside the stretch settings so the note's "what changed" is meaningful
+    // across iterations, not just the display stretch.
+    sigma?: number;
+    apply_dark?: boolean;
+    apply_flat?: boolean;
+    integration_method?: IntegrationMethod;
+    // Non-destructive crop/rotate applied on top of the linear master.
+    rotation: number;
+    crop_x?: number;
+    crop_y?: number;
+    crop_width?: number;
+    crop_height?: number;
+  };
 
 export type VersionStats = {
   snr_db: number | null;
@@ -118,13 +136,14 @@ export type MasterDimensions = {
 
 export type ExportFormat = "tiff" | "png" | "jpeg";
 
-export type ExportParams = StretchParams & {
-  fix_halos: boolean;
-  rotation: number;
-  crop_x?: number;
-  crop_y?: number;
-  crop_width?: number;
-  crop_height?: number;
-  format: ExportFormat;
-  destination_path: string;
-};
+export type ExportParams = StretchParams &
+  EffectsParams & {
+    fix_halos: boolean;
+    rotation: number;
+    crop_x?: number;
+    crop_y?: number;
+    crop_width?: number;
+    crop_height?: number;
+    format: ExportFormat;
+    destination_path: string;
+  };

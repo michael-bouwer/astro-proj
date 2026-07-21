@@ -1,4 +1,5 @@
 import type {
+  EffectsParams,
   ExportParams,
   JobStatus,
   MasterDimensions,
@@ -78,7 +79,8 @@ export function previewUrl(
   workspaceId: string,
   params: { method: string; midtone: number; scale: number; target_bkg: number; shadow_clip: number },
   cacheBust: number,
-  transform?: TransformParams
+  transform?: TransformParams,
+  effects?: EffectsParams
 ): string {
   const query = new URLSearchParams({
     method: params.method,
@@ -96,6 +98,12 @@ export function previewUrl(
       query.set("crop_width", String(transform.crop.width));
       query.set("crop_height", String(transform.crop.height));
     }
+  }
+  if (effects) {
+    query.set("brightness", String(effects.brightness));
+    query.set("contrast", String(effects.contrast));
+    query.set("saturation", String(effects.saturation));
+    query.set("sharpen", String(effects.sharpen));
   }
   return `${API_BASE}/workspaces/${workspaceId}/preview?${query.toString()}`;
 }

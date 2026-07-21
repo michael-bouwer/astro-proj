@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from pipeline import color, halos, orchestrator, raw_io, stretch, transform, workspace
+from pipeline import color, effects, halos, orchestrator, raw_io, stretch, transform, workspace
 
 app = FastAPI()
 
@@ -79,6 +79,12 @@ class SaveVersionRequest(BaseModel):
     crop_y: float | None = None
     crop_width: float | None = None
     crop_height: float | None = None
+    # Simple display-space post-processing, applied last (after halo-fix) --
+    # see pipeline/effects.py. Each defaults to its neutral no-op value.
+    brightness: float = 0.0
+    contrast: float = 0.0
+    saturation: float = 1.0
+    sharpen: float = 0.0
 
 
 class ExportRequest(BaseModel):
@@ -93,6 +99,10 @@ class ExportRequest(BaseModel):
     crop_y: float | None = None
     crop_width: float | None = None
     crop_height: float | None = None
+    brightness: float = 0.0
+    contrast: float = 0.0
+    saturation: float = 1.0
+    sharpen: float = 0.0
     format: str = "tiff"  # "tiff" | "png" | "jpeg"
     destination_path: str
 
@@ -217,6 +227,10 @@ def workspace_preview(
     crop_y: float | None = None,
     crop_width: float | None = None,
     crop_height: float | None = None,
+    brightness: float = 0.0,
+    contrast: float = 0.0,
+    saturation: float = 1.0,
+    sharpen: float = 0.0,
 ):
     _workspace_or_404(workspace_id)
     master = loaded_masters.get(workspace_id)
@@ -230,6 +244,9 @@ def workspace_preview(
 
     preview_u8 = stretch.to_uint8(
         transformed, method=method, midtone=midtone, scale=scale, target_bkg=target_bkg, shadow_clip=shadow_clip
+    )
+    preview_u8 = effects.apply(
+        preview_u8, brightness=brightness, contrast=contrast, saturation=saturation, sharpen_amount=sharpen
     )
     return Response(content=raw_io.encode_jpeg(preview_u8), media_type="image/jpeg")
 
@@ -273,6 +290,9 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
     )
     if req.fix_halos:
         stretched_u16 = halos.fix_star_halos(stretched_u16)
+    stretched_u16 = effects.apply(
+        stretched_u16, brightness=req.brightness, contrast=req.contrast, saturation=req.saturation, sharpen_amount=req.sharpen
+    )
 
     thumbnail_u8 = (stretched_u16 // 256).astype("uint8")
     params = req.model_dump()
@@ -308,6 +328,9 @@ def export_workspace(workspace_id: str, req: ExportRequest):
     )
     if req.fix_halos:
         stretched_u16 = halos.fix_star_halos(stretched_u16)
+    stretched_u16 = effects.apply(
+        stretched_u16, brightness=req.brightness, contrast=req.contrast, saturation=req.saturation, sharpen_amount=req.sharpen
+    )
 
     if req.format == "jpeg":
         output = (stretched_u16 // 256).astype("uint8")

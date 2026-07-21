@@ -1,6 +1,6 @@
 import { Button, Slider, Text } from "@chakra-ui/react";
 import type { MasterDimensions, TransformParams } from "../../api/types";
-import { centeredCropForAspect, simplifyRatio } from "../../utils/imageGeometry";
+import { FULL_FRAME_CROP, centeredCropForAspect, cropMatchesAspect, simplifyRatio } from "../../utils/imageGeometry";
 import styles from "./CropRotateControls.module.scss";
 
 const ASPECT_PRESETS: { label: string; aspect: number | null }[] = [
@@ -97,25 +97,39 @@ export function CropRotateControls({
       <div className={styles.field}>
         <Text className={styles.label}>Aspect ratio</Text>
         <div className={styles.presetRow}>
-          {ASPECT_PRESETS.map((preset) => (
-            <Button
-              key={preset.label}
-              size="sm"
-              variant="outline"
-              disabled={!masterDimensions}
-              onClick={() =>
-                onPendingChange({
-                  ...pendingTransform,
-                  crop:
-                    preset.aspect == null || !masterDimensions
-                      ? null
-                      : centeredCropForAspect(preset.aspect, masterDimensions.width, masterDimensions.height),
-                })
-              }
-            >
-              {preset.label}
-            </Button>
-          ))}
+          {ASPECT_PRESETS.map((preset) => {
+            const isActive =
+              preset.aspect == null
+                ? !pendingTransform.crop
+                : !!pendingTransform.crop &&
+                  !!masterDimensions &&
+                  cropMatchesAspect(pendingTransform.crop, preset.aspect, masterDimensions.width, masterDimensions.height);
+            return (
+              <Button
+                key={preset.label}
+                size="sm"
+                variant={isActive ? "solid" : "outline"}
+                colorPalette="brand"
+                disabled={!masterDimensions}
+                onClick={() =>
+                  onPendingChange({
+                    ...pendingTransform,
+                    crop:
+                      preset.aspect == null || !masterDimensions
+                        ? null
+                        : centeredCropForAspect(
+                            preset.aspect,
+                            pendingTransform.crop ?? FULL_FRAME_CROP,
+                            masterDimensions.width,
+                            masterDimensions.height,
+                          ),
+                  })
+                }
+              >
+                {preset.label}
+              </Button>
+            );
+          })}
         </div>
         <Text className={styles.cropReadout}>
           {pendingTransform.crop

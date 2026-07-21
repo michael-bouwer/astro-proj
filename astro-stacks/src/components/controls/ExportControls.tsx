@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { Button, Checkbox, Input, Text } from "@chakra-ui/react";
 import { ApiError, exportWorkspace } from "../../api/client";
-import type { ExportFormat, MasterDimensions, RunParams, RunResult, StretchParams, TransformParams, Workspace } from "../../api/types";
+import type {
+  EffectsParams,
+  ExportFormat,
+  MasterDimensions,
+  RunParams,
+  RunResult,
+  StretchParams,
+  TransformParams,
+  Workspace,
+} from "../../api/types";
 import { simplifyRatio } from "../../utils/imageGeometry";
 import { buildDefaultExportFilename } from "../../utils/exportFilename";
 import styles from "./ExportControls.module.scss";
@@ -29,6 +38,7 @@ export function ExportControls({
   masterLoaded,
   masterDimensions,
   stretchParams,
+  effectsParams,
   transformParams,
   runParams,
   runResult,
@@ -38,6 +48,7 @@ export function ExportControls({
   masterLoaded: boolean;
   masterDimensions: MasterDimensions | null;
   stretchParams: StretchParams;
+  effectsParams: EffectsParams;
   transformParams: TransformParams;
   runParams: RunParams | null;
   runResult: RunResult | null;
@@ -90,6 +101,7 @@ export function ExportControls({
     try {
       const result = await exportWorkspace(workspaceId, {
         ...stretchParams,
+        ...effectsParams,
         fix_halos: fixHalos,
         rotation: transformParams.rotationDeg,
         ...(transformParams.crop

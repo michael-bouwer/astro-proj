@@ -1,9 +1,8 @@
 import { useRef } from "react";
 import type { CropRect, MasterDimensions, TransformParams } from "../../api/types";
-import { clamp } from "../../utils/imageGeometry";
+import { FULL_FRAME_CROP, clamp } from "../../utils/imageGeometry";
 import styles from "./CropRotateOverlay.module.scss";
 
-const FULL_FRAME: CropRect = { x: 0, y: 0, width: 1, height: 1 };
 const MIN_CROP_SIZE = 0.08;
 
 type Corner = "nw" | "ne" | "sw" | "se";
@@ -87,7 +86,7 @@ export function CropRotateOverlay({
   masterDimensions: MasterDimensions | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const crop = pendingTransform.crop ?? FULL_FRAME;
+  const crop = pendingTransform.crop ?? FULL_FRAME_CROP;
 
   const setCrop = (next: CropRect) => onPendingChange({ ...pendingTransform, crop: next });
 
@@ -156,6 +155,11 @@ export function CropRotateOverlay({
         style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.width), height: pct(crop.height) }}
         onPointerDown={startBoxDrag}
       >
+        {masterDimensions && (
+          <div className={styles.dimensionLabel}>
+            {Math.round(crop.width * masterDimensions.width)} × {Math.round(crop.height * masterDimensions.height)} px
+          </div>
+        )}
         <div
           className={`${styles.handle} ${styles.handleNw}`}
           style={{ left: 0, top: 0, transform: "translate(-50%, -50%)" }}

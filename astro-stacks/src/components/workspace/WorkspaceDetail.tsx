@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Text } from "@chakra-ui/react";
 import { ApiError, deleteWorkspace, getJobStatus, getWorkspace, loadMaster, runPipeline } from "../../api/client";
-import type {
-  JobStatus,
-  MasterDimensions,
-  RunParams,
-  RunResult,
-  StretchParams,
-  TransformParams,
-  Version,
-  Workspace,
+import {
+  DEFAULT_EFFECTS_PARAMS,
+  type EffectsParams,
+  type JobStatus,
+  type MasterDimensions,
+  type RunParams,
+  type RunResult,
+  type StretchParams,
+  type TransformParams,
+  type Version,
+  type Workspace,
 } from "../../api/types";
 import { FramePanel } from "../frames/FramePanel";
 import { PreviewPanel } from "../preview/PreviewPanel";
@@ -58,6 +60,7 @@ export function WorkspaceDetail({
   const [runParams, setRunParams] = useState<RunParams>(DEFAULT_RUN_PARAMS);
   const [lastCompletedRunParams, setLastCompletedRunParams] = useState<RunParams | null>(null);
   const [stretchParams, setStretchParams] = useState<StretchParams>(DEFAULT_STRETCH_PARAMS);
+  const [effectsParams, setEffectsParams] = useState<EffectsParams>(DEFAULT_EFFECTS_PARAMS);
   const [transformParams, setTransformParams] = useState<TransformParams>(DEFAULT_TRANSFORM_PARAMS);
   const [pendingTransform, setPendingTransform] = useState<TransformParams>(DEFAULT_TRANSFORM_PARAMS);
   const [cropEditing, setCropEditing] = useState(false);
@@ -201,6 +204,7 @@ export function WorkspaceDetail({
           workspaceId={workspaceId}
           masterLoaded={masterLoaded}
           stretchParams={stretchParams}
+          effectsParams={effectsParams}
           transformParams={transformParams}
           cropEditing={cropEditing}
           pendingTransform={pendingTransform}
@@ -220,6 +224,8 @@ export function WorkspaceDetail({
           job={job}
           stretchParams={stretchParams}
           onStretchParamsChange={setStretchParams}
+          effectsParams={effectsParams}
+          onEffectsParamsChange={setEffectsParams}
           transformParams={transformParams}
           pendingTransform={pendingTransform}
           onPendingChange={setPendingTransform}
@@ -242,6 +248,7 @@ export function WorkspaceDetail({
         onClose={() => setSaveOpen(false)}
         workspaceId={workspaceId}
         stretchParams={stretchParams}
+        effectsParams={effectsParams}
         transformParams={transformParams}
         runParams={lastCompletedRunParams}
         onSaved={handleVersionSaved}

@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
-from pipeline import alignment, calibration, color, halos, orchestrator, raw_io, stretch, transform
+from pipeline import alignment, calibration, color, effects, halos, orchestrator, raw_io, stretch, transform
 from tests.conftest import make_bias_frame, make_dark_frame, make_flat_frame, make_light_frame, _rng
 
 
@@ -305,3 +305,76 @@ def test_apply_with_no_rotation_or_crop_returns_input_unchanged():
     rng = _rng()
     img = make_light_frame(rng).astype(np.float32)
     assert transform.apply(img) is img
+
+
+def test_adjust_brightness_zero_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.adjust_brightness(img, 0.0) is img
+
+
+def test_adjust_brightness_shifts_mean_up_and_down():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    brighter = effects.adjust_brightness(img, 0.2)
+    darker = effects.adjust_brightness(img, -0.2)
+    assert brighter.mean() > img.mean() > darker.mean()
+    assert brighter.dtype == img.dtype
+
+
+def test_adjust_contrast_zero_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.adjust_contrast(img, 0.0) is img
+
+
+def test_adjust_contrast_increases_spread_around_midpoint():
+    img = np.zeros((20, 20, 3), dtype=np.uint8)
+    img[:10] = 80
+    img[10:] = 175  # values symmetric around the 127.5 midpoint
+
+    contrasted = effects.adjust_contrast(img, 0.5)
+
+    assert contrasted.std() > img.std()
+
+
+def test_adjust_saturation_one_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.adjust_saturation(img, 1.0) is img
+
+
+def test_adjust_saturation_zero_desaturates_to_equal_channels():
+    img = np.zeros((20, 20, 3), dtype=np.uint8)
+    img[:, :, 0] = 40  # B
+    img[:, :, 1] = 120  # G
+    img[:, :, 2] = 200  # R
+
+    desaturated = effects.adjust_saturation(img, 0.0)
+
+    assert np.ptp(desaturated[0, 0]) < 2  # B/G/R now nearly equal (grayscale)
+
+
+def test_sharpen_zero_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.sharpen(img, 0.0) is img
+
+
+def test_sharpen_visibly_changes_a_soft_edge():
+    img = np.zeros((20, 20, 3), dtype=np.uint8)
+    img[:, 10:] = 200
+    sharpened = effects.sharpen(img, 1.0)
+    assert not np.array_equal(sharpened, img)
+    assert sharpened.shape == img.shape and sharpened.dtype == img.dtype
+
+
+def test_effects_apply_defaults_are_a_full_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint16)
+    assert effects.apply(img) is img
+
+
+def test_effects_apply_preserves_shape_and_dtype_across_formats():
+    rng = _rng()
+    img_u8 = stretch.to_uint8(make_light_frame(rng).astype(np.float32))
+    result_u8 = effects.apply(img_u8, brightness=0.1, contrast=0.1, saturation=1.3, sharpen_amount=0.5)
+    assert result_u8.shape == img_u8.shape and result_u8.dtype == np.uint8
+
+    img_u16 = stretch.to_uint16(make_light_frame(rng).astype(np.float32))
+    result_u16 = effects.apply(img_u16, brightness=0.1, contrast=0.1, saturation=1.3, sharpen_amount=0.5)
+    assert result_u16.shape == img_u16.shape and result_u16.dtype == np.uint16
