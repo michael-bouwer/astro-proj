@@ -49,6 +49,43 @@ export function cropMatchesAspect(crop: CropRect, aspect: number, frameWidth: nu
   return Math.abs(cropAspect - aspect) < 0.005;
 }
 
+/** Exact targetWidth x targetHeight pixel rect centered on `baseRect`'s own
+ * center (same "reorient in place" behavior as centeredCropForAspect) --
+ * used by the fixed-resolution presets (1080p, 4K, ...) rather than
+ * aspect-only ones. Caller is expected to only offer a target size that fits
+ * within the frame (see the presets' own width/height disabled check). */
+export function centeredCropForSize(
+  targetWidth: number,
+  targetHeight: number,
+  baseRect: CropRect,
+  frameWidth: number,
+  frameHeight: number,
+): CropRect {
+  const width = clamp(targetWidth / frameWidth, 0, 1);
+  const height = clamp(targetHeight / frameHeight, 0, 1);
+  const centerX = baseRect.x + baseRect.width / 2;
+  const centerY = baseRect.y + baseRect.height / 2;
+
+  return {
+    x: clamp(centerX - width / 2, 0, 1 - width),
+    y: clamp(centerY - height / 2, 0, 1 - height),
+    width,
+    height,
+  };
+}
+
+/** True if a crop's pixel dimensions match targetWidth x targetHeight within
+ * a fraction of a pixel -- used to highlight the active resolution preset. */
+export function cropMatchesSize(
+  crop: CropRect,
+  targetWidth: number,
+  targetHeight: number,
+  frameWidth: number,
+  frameHeight: number,
+): boolean {
+  return Math.abs(crop.width * frameWidth - targetWidth) < 1 && Math.abs(crop.height * frameHeight - targetHeight) < 1;
+}
+
 /** Simplifies a pixel width/height into a small-integer ratio label like "3:2",
  * falling back to a decimal ratio if no clean small-integer match is found. */
 export function simplifyRatio(width: number, height: number): string {

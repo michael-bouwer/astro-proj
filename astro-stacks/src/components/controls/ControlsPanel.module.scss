@@ -8,7 +8,29 @@
 
 .tabList {
   display: flex;
+  align-items: stretch;
   border-bottom: 1px solid var(--chakra-colors-border);
-  padding: 0 8px;
+  padding: 0 4px;
   flex-shrink: 0;
+
+  // Five tabs (Stacking/Stretch/Effects/Crop/Export) in a 320px sidebar --
+  // Chakra's default trigger padding (8px 16px) leaves them crowded with no
+  // breathing room. Distribute evenly instead of content-sizing.
+  :global(.chakra-tabs__trigger) {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 4px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  // The active tab's underline is Chakra's own ::before on the trigger,
+  // anchored at bottom: -1px -- that lands a pixel below this list's own
+  // border-bottom (its height ends up a pixel taller than the trigger's
+  // content box), so the underline reads as floating/offset from the shared
+  // line instead of sitting flush on it. Chakra doesn't expose this as a
+  // themeable token, so pin it directly.
+  :global(.chakra-tabs__trigger[data-selected])::before {
+    bottom: 0 !important;
+  }
 }
