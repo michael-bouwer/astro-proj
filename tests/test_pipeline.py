@@ -110,6 +110,69 @@ def test_color_calibrate_neutralizes_color_cast_without_zeroing_background():
     assert sky_median.min() > 1000
 
 
+def test_remove_background_gradient_flattens_a_directional_gradient():
+    height, width = 200, 300
+    img = np.full((height, width, 3), 700.0, dtype=np.float32)
+
+    # A red-channel-specific left-to-right gradient, like the residual
+    # vignette this function targets -- other channels stay flat.
+    ramp = np.linspace(0, 400, width, dtype=np.float32)
+    img[:, :, 2] += ramp[np.newaxis, :]
+
+    rng = _rng()
+    for _ in range(15):
+        y, x = rng.integers(10, height - 10), rng.integers(10, width - 10)
+        img[y - 2 : y + 2, x - 2 : x + 2] = 30000.0  # small bright "stars"
+
+    corrected = color.remove_background_gradient(img)
+
+    def red_at(col):
+        return np.median(corrected[:, col - 5 : col + 5, 2])
+
+    before_spread = ramp[-1] - ramp[0]
+    after_spread = abs(red_at(width - 10) - red_at(10))
+    assert after_spread < before_spread * 0.15  # gradient largely flattened
+
+
+def test_remove_background_gradient_preserves_extended_nebula_signal():
+    height, width = 200, 300
+    img = np.full((height, width, 3), 700.0, dtype=np.float32)
+
+    # A smooth, localized patch well below star_mask's point-source threshold
+    # -- extended nebulosity, not a star -- covering a modest corner of the
+    # frame, well clear of most of the grid's background cells. A patch broad
+    # enough to dominate most of the frame is close to indistinguishable from
+    # a real gradient for *any* low-order polynomial method (not just this
+    # one) -- this tests the realistic case, a real feature sitting within an
+    # otherwise-measurable background, not that worst case.
+    yy, xx = np.mgrid[0:height, 0:width]
+    nebula = np.exp(-(((yy - 100) ** 2 + (xx - 220) ** 2) / (2 * 20**2))) * 350.0
+    for c in range(3):
+        img[:, :, c] += nebula
+
+    rng = _rng()
+    for _ in range(15):
+        y, x = rng.integers(10, height - 10), rng.integers(10, width - 10)
+        img[y - 2 : y + 2, x - 2 : x + 2] = 30000.0
+
+    corrected = color.remove_background_gradient(img)
+
+    nebula_level = np.median(corrected[95:105, 215:225, 1])
+    plain_background_level = np.median(corrected[:20, :20, 1])
+    # the nebula should still read clearly brighter than plain background --
+    # not flattened away as if it were part of the gradient.
+    assert nebula_level - plain_background_level > 200
+
+
+def test_remove_background_gradient_leaves_image_untouched_with_no_background_samples():
+    img = np.full((50, 50, 3), 700.0, dtype=np.float32)
+    all_star_mask = np.ones((50, 50), dtype=np.float32)  # nothing classified as background
+
+    corrected = color.remove_background_gradient(img, mask=all_star_mask)
+
+    assert np.array_equal(corrected, img)
+
+
 def test_stretch_output_ranges():
     linear = np.array([[[0, 1000, 60000]]], dtype=np.float32)
 

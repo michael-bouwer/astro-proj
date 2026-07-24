@@ -12,8 +12,13 @@
 }
 
 .numberInput {
-  width: 72px;
+  width: 50px;
   flex-shrink: 0;
+  padding: 14px;
+
+  div {
+    width: fit-content;
+  }
 
   input {
     text-align: right;
