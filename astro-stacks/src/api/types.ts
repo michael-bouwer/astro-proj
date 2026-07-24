@@ -164,6 +164,17 @@ export type ExportParams = StretchParams &
     destination_path: string;
   };
 
+// Whatever's currently applied across the Stretch/Effects/Crop/Stacking tabs
+// -- saved so reopening a workspace restores it instead of always starting
+// from defaults. GET returns a partial object (only the groups that have
+// ever been saved); a freshly created workspace returns {}.
+export type WorkspaceSettings = {
+  stretch: StretchParams;
+  effects: EffectsParams;
+  transform: TransformParams;
+  run: RunParams;
+};
+
 export type SystemStats = {
   cpu_percent: number;
   memory_percent: number;

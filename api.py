@@ -126,6 +126,53 @@ class SaveVersionRequest(BaseModel):
     sharpen: float = 0.0
 
 
+class CropRectRequest(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class TransformSettings(BaseModel):
+    rotationDeg: float = 0.0
+    crop: CropRectRequest | None = None
+
+
+class StretchSettings(BaseModel):
+    method: str = "auto"
+    midtone: float = 0.25
+    scale: float = 1000.0
+    target_bkg: float = 0.25
+    shadow_clip: float = -2.8
+
+
+class EffectsSettings(BaseModel):
+    brightness: float = 0.0
+    contrast: float = 0.0
+    saturation: float = 1.0
+    sharpen: float = 0.0
+
+
+class RunSettings(BaseModel):
+    sigma: float = 3.0
+    apply_dark: bool = True
+    apply_flat: bool = True
+    integration_method: str = "sigma_clip"
+
+
+class WorkspaceSettingsRequest(BaseModel):
+    """Whatever's currently applied across the Stretch/Effects/Crop/Stacking
+    tabs -- saved so reopening a workspace restores it instead of always
+    starting from defaults. Purely UI state the frontend round-trips; nothing
+    here is interpreted server-side.
+    """
+
+    stretch: StretchSettings
+    effects: EffectsSettings
+    transform: TransformSettings
+    run: RunSettings
+
+
 class ExportRequest(BaseModel):
     method: str = "auto"
     midtone: float = 0.25
@@ -207,6 +254,18 @@ def delete_workspace(workspace_id: str):
 def get_workspace_frames(workspace_id: str):
     _workspace_or_404(workspace_id)
     return workspace.list_frames_in_workspace(workspace_id)
+
+
+@app.get("/workspaces/{workspace_id}/settings")
+def get_workspace_settings(workspace_id: str):
+    _workspace_or_404(workspace_id)
+    return workspace.load_settings(workspace_id) or {}
+
+
+@app.put("/workspaces/{workspace_id}/settings")
+def put_workspace_settings(workspace_id: str, req: WorkspaceSettingsRequest):
+    _workspace_or_404(workspace_id)
+    return workspace.save_settings(workspace_id, req.model_dump())
 
 
 @app.get("/workspaces/{workspace_id}/frames/preview")

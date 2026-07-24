@@ -11,6 +11,7 @@ import type {
   Version,
   Workspace,
   WorkspaceFrames,
+  WorkspaceSettings,
 } from "./types";
 
 export const API_BASE = "http://127.0.0.1:8000";
@@ -60,6 +61,17 @@ export function deleteWorkspace(workspaceId: string): Promise<{ status: string }
 
 export function getWorkspaceFrames(workspaceId: string): Promise<WorkspaceFrames> {
   return request(`/workspaces/${workspaceId}/frames`);
+}
+
+export function getWorkspaceSettings(workspaceId: string): Promise<Partial<WorkspaceSettings>> {
+  return request(`/workspaces/${workspaceId}/settings`);
+}
+
+export function saveWorkspaceSettings(workspaceId: string, settings: WorkspaceSettings): Promise<WorkspaceSettings> {
+  return request(`/workspaces/${workspaceId}/settings`, {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
 }
 
 export function framePreviewUrl(workspaceId: string, kind: FrameKind, filename: string): string {

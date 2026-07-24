@@ -40,6 +40,10 @@ def _versions_dir(workspace_id):
     return os.path.join(_workspace_dir(workspace_id), "versions")
 
 
+def _settings_json_path(workspace_id):
+    return os.path.join(_workspace_dir(workspace_id), "settings.json")
+
+
 def _version_dir(workspace_id, version_id):
     return os.path.join(_versions_dir(workspace_id), version_id)
 
@@ -137,6 +141,28 @@ def touch_workspace(workspace_id):
     workspace = _load_workspace_raw(workspace_id)
     workspace["updated_at"] = _now()
     _write_json(_workspace_json_path(workspace_id), workspace)
+
+
+def save_settings(workspace_id, settings):
+    """Persists the last-applied Stretch/Effects/Crop/Stacking tab settings for
+    a workspace, so reopening it restores them instead of always starting from
+    defaults. Stored separately from workspace.json (name/source_path/
+    timestamps) since it's UI state, not workspace identity.
+    """
+    _load_workspace_raw(workspace_id)
+    _write_json(_settings_json_path(workspace_id), settings)
+    return settings
+
+
+def load_settings(workspace_id):
+    """The last-saved tab settings for this workspace, or None if it's never
+    had any saved (a freshly created workspace, or one from before this
+    existed)."""
+    _load_workspace_raw(workspace_id)
+    path = _settings_json_path(workspace_id)
+    if not os.path.isfile(path):
+        return None
+    return _read_json(path)
 
 
 def workspace_output_dir(workspace_id):

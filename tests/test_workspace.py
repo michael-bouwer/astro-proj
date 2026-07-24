@@ -133,6 +133,34 @@ def test_save_and_list_versions(synthetic_dataset, isolated_workspaces_root):
     assert thumb_path.endswith("thumbnail.jpg")
 
 
+def test_load_settings_returns_none_when_never_saved(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    assert workspace.load_settings(created["id"]) is None
+
+
+def test_save_and_load_settings_round_trip(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    settings = {
+        "stretch": {"method": "mtf", "midtone": 0.4, "scale": 1000, "target_bkg": 0.25, "shadow_clip": -2.8},
+        "effects": {"brightness": 0.1, "contrast": 0.0, "saturation": 1.2, "sharpen": 0.0},
+        "transform": {"rotationDeg": 12.5, "crop": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8}},
+        "run": {"sigma": 3.0, "apply_dark": True, "apply_flat": False, "integration_method": "median"},
+    }
+
+    workspace.save_settings(created["id"], settings)
+    assert workspace.load_settings(created["id"]) == settings
+
+    # saving again overwrites, not merges
+    updated = {**settings, "transform": {"rotationDeg": 0.0, "crop": None}}
+    workspace.save_settings(created["id"], updated)
+    assert workspace.load_settings(created["id"])["transform"] == {"rotationDeg": 0.0, "crop": None}
+
+
+def test_save_settings_unknown_id_raises_keyerror(isolated_workspaces_root):
+    with pytest.raises(KeyError):
+        workspace.save_settings("does-not-exist", {})
+
+
 def test_delete_workspace_removes_it(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
     workspace.delete_workspace(created["id"])

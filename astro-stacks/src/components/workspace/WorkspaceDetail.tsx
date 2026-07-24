@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Text } from "@chakra-ui/react";
-import { ApiError, deleteWorkspace, getWorkspace, loadMaster } from "../../api/client";
+import { ApiError, deleteWorkspace, getWorkspace, getWorkspaceSettings, loadMaster, saveWorkspaceSettings } from "../../api/client";
 import {
   DEFAULT_EFFECTS_PARAMS,
   type EffectsParams,
@@ -78,6 +78,12 @@ export function WorkspaceDetail({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
 
+  // Gates the auto-save effect below until the initial settings fetch has
+  // resolved -- otherwise the still-default state this component mounts with
+  // would get saved (and overwrite whatever was there) before the real,
+  // previously-saved settings even had a chance to load.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   const prevJobStatusRef = useRef<JobStatusValue | undefined>(undefined);
 
   const refreshWorkspace = () => {
@@ -90,6 +96,40 @@ export function WorkspaceDetail({
     refreshWorkspace();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
+
+  useEffect(() => {
+    getWorkspaceSettings(workspaceId)
+      .then((saved) => {
+        if (saved.stretch) setStretchParams(saved.stretch);
+        if (saved.effects) setEffectsParams(saved.effects);
+        if (saved.transform) setTransformParams(saved.transform);
+        if (saved.run) setRunParams(saved.run);
+      })
+      .catch(() => {
+        // no saved settings yet (or a transient error) -- fall back to defaults
+      })
+      .finally(() => setSettingsLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  // Debounced so dragging a slider doesn't fire a save on every tick -- only
+  // once the user has settled on a value. Saves the whole bundle together
+  // (simpler than tracking which one group changed, and cheap either way).
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    const timeout = setTimeout(() => {
+      saveWorkspaceSettings(workspaceId, {
+        stretch: stretchParams,
+        effects: effectsParams,
+        transform: transformParams,
+        run: runParams,
+      }).catch(() => {
+        // best-effort persistence -- a failed save shouldn't interrupt editing
+      });
+    }, 600);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stretchParams, effectsParams, transformParams, runParams, settingsLoaded]);
 
   useEffect(() => {
     if (workspace?.has_master && !masterLoaded) {
