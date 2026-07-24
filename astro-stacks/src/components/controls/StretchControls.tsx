@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { Button, Text } from "@chakra-ui/react";
-import type { StretchMethod, StretchParams } from "../../api/types";
+import { getHistogram } from "../../api/client";
+import type { Histogram as HistogramData, StretchMethod, StretchParams, TransformParams } from "../../api/types";
+import { Histogram } from "./Histogram";
 import { LabeledSlider } from "./LabeledSlider";
 import styles from "./StretchControls.module.scss";
 
@@ -12,12 +15,37 @@ const METHODS: { value: StretchMethod; label: string }[] = [
 export function StretchControls({
   params,
   onChange,
+  workspaceId,
+  masterLoaded,
+  transformParams,
 }: {
   params: StretchParams;
   onChange: (params: StretchParams) => void;
+  workspaceId: string;
+  masterLoaded: boolean;
+  transformParams: TransformParams;
 }) {
+  const [histogram, setHistogram] = useState<HistogramData | null>(null);
+
+  // The histogram reflects the linear data itself (which region of the
+  // frame, via rotation/crop) -- not the stretch method/midtone/target_bkg,
+  // so this only needs to refetch on those, plus shadow_clip since that's
+  // what the black-point marker is drawn from.
+  useEffect(() => {
+    if (!masterLoaded) {
+      setHistogram(null);
+      return;
+    }
+    getHistogram(workspaceId, params.shadow_clip, transformParams)
+      .then(setHistogram)
+      .catch(() => setHistogram(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, masterLoaded, params.shadow_clip, transformParams]);
+
   return (
     <div className={styles.section}>
+      <Histogram data={histogram} />
+
       <div className={styles.field}>
         <Text className={styles.label}>Stretch method</Text>
         <div className={styles.segmented}>

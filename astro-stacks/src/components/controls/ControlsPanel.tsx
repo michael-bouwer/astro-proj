@@ -93,7 +93,13 @@ export function ControlsPanel({
           />
         </Tabs.Content>
         <Tabs.Content value="stretch">
-          <StretchControls params={stretchParams} onChange={onStretchParamsChange} />
+          <StretchControls
+            params={stretchParams}
+            onChange={onStretchParamsChange}
+            workspaceId={workspace.id}
+            masterLoaded={masterLoaded}
+            transformParams={transformParams}
+          />
         </Tabs.Content>
         <Tabs.Content value="effects">
           <EffectsControls params={effectsParams} onChange={onEffectsParamsChange} />

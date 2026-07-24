@@ -161,6 +161,36 @@ def test_save_settings_unknown_id_raises_keyerror(isolated_workspaces_root):
         workspace.save_settings("does-not-exist", {})
 
 
+def test_load_frame_quality_empty_when_never_saved(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    assert workspace.load_frame_quality(created["id"]) == []
+
+
+def test_save_and_load_frame_quality_round_trip(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    frame_quality = [
+        {"filename": "light_0.png", "status": "included", "snr_db": 21.4},
+        {"filename": "light_1.png", "status": "quality_rejected", "snr_db": 5.1},
+    ]
+
+    workspace.save_frame_quality(created["id"], frame_quality)
+    assert workspace.load_frame_quality(created["id"]) == frame_quality
+
+
+def test_load_excluded_frames_empty_when_never_saved(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    assert workspace.load_excluded_frames(created["id"]) == []
+
+
+def test_save_and_load_excluded_frames_round_trip(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+
+    workspace.save_excluded_frames(created["id"], ["light_1.png", "light_0.png", "light_1.png"])
+
+    # de-duplicated and sorted, regardless of the order/duplicates passed in
+    assert workspace.load_excluded_frames(created["id"]) == ["light_0.png", "light_1.png"]
+
+
 def test_delete_workspace_removes_it(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
     workspace.delete_workspace(created["id"])

@@ -12,6 +12,9 @@ const FIELDS: {
   { key: "brightness", label: "Brightness", min: -1, max: 1 },
   { key: "contrast", label: "Contrast", min: -1, max: 1 },
   { key: "saturation", label: "Saturation", min: 0, max: 2 },
+  { key: "vibrance", label: "Vibrance", min: -1, max: 1 },
+  { key: "star_reduction", label: "Star reduction", min: 0, max: 1 },
+  { key: "noise_reduction", label: "Noise reduction", min: 0, max: 1 },
   { key: "sharpen", label: "Sharpen", min: 0, max: 1 },
 ];
 

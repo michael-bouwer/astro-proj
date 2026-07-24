@@ -82,6 +82,19 @@ export type StretchParams = {
   shadow_clip: number;
 };
 
+// Per-channel linear-data distribution for the current rotation/crop -- see
+// pipeline/stretch.py's compute_histogram. Doesn't depend on stretch method/
+// midtone/target_bkg, so it's only refetched on rotation/crop changes, not
+// on every stretch-slider tick.
+export type Histogram = {
+  display_max: number;
+  bins: number;
+  black_point: number;
+  b: number[];
+  g: number[];
+  r: number[];
+};
+
 // Normalized [0,1] fractions of the (rotated) image -- resolution-independent
 // between the small preview JPEG and the full-res master.
 export type CropRect = {
@@ -96,13 +109,17 @@ export type TransformParams = {
   crop: CropRect | null;
 };
 
-// Simple display-space post-processing (brightness/contrast/saturation/sharpen),
-// applied last -- after stretch and halo-fix. Each field's neutral/no-op value
-// matches the backend's default (pipeline/effects.py).
+// Simple display-space post-processing (brightness/contrast/saturation/
+// vibrance/star reduction/noise reduction/sharpen), applied last -- after
+// stretch and halo-fix. Each field's neutral/no-op value matches the
+// backend's default (pipeline/effects.py).
 export type EffectsParams = {
   brightness: number; // -1..1, 0 = unchanged
   contrast: number; // -1..1, 0 = unchanged
   saturation: number; // 0..2, 1 = unchanged
+  vibrance: number; // -1..1, 0 = unchanged
+  star_reduction: number; // 0..1, 0 = unchanged
+  noise_reduction: number; // 0..1, 0 = unchanged
   sharpen: number; // 0..1, 0 = unchanged
 };
 
@@ -110,6 +127,9 @@ export const DEFAULT_EFFECTS_PARAMS: EffectsParams = {
   brightness: 0,
   contrast: 0,
   saturation: 1,
+  vibrance: 0,
+  star_reduction: 0,
+  noise_reduction: 0,
   sharpen: 0,
 };
 
@@ -173,6 +193,16 @@ export type WorkspaceSettings = {
   effects: EffectsParams;
   transform: TransformParams;
   run: RunParams;
+};
+
+// Per-light-frame outcome from the most recently completed pipeline run --
+// see pipeline/orchestrator.py's frame_quality return value.
+export type FrameQualityStatus = "included" | "quality_rejected" | "failed_to_align" | "manually_excluded";
+
+export type FrameQualityEntry = {
+  filename: string;
+  status: FrameQualityStatus;
+  snr_db: number | null;
 };
 
 export type SystemStats = {

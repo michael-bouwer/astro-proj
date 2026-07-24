@@ -5,6 +5,7 @@ import styles from "./WorkspaceHeader.module.scss";
 export function WorkspaceHeader({
   workspace,
   onOpenHistory,
+  onOpenFrameQuality,
   onSaveVersion,
   saveDisabled,
   onEdit,
@@ -12,6 +13,7 @@ export function WorkspaceHeader({
 }: {
   workspace: Workspace;
   onOpenHistory: () => void;
+  onOpenFrameQuality: () => void;
   onSaveVersion: () => void;
   saveDisabled: boolean;
   onEdit: () => void;
@@ -29,6 +31,9 @@ export function WorkspaceHeader({
         </Button>
         <Button variant="ghost" colorPalette="red" onClick={onDelete}>
           Delete
+        </Button>
+        <Button variant="outline" onClick={onOpenFrameQuality}>
+          Frame Quality
         </Button>
         <Button variant="outline" onClick={onOpenHistory}>
           History

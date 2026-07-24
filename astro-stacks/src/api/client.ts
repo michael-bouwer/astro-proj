@@ -2,6 +2,8 @@ import type {
   EffectsParams,
   ExportParams,
   FrameKind,
+  FrameQualityEntry,
+  Histogram,
   JobStatus,
   MasterDimensions,
   RunParams,
@@ -74,6 +76,21 @@ export function saveWorkspaceSettings(workspaceId: string, settings: WorkspaceSe
   });
 }
 
+export function getFrameQuality(workspaceId: string): Promise<{ frame_quality: FrameQualityEntry[] }> {
+  return request(`/workspaces/${workspaceId}/frame_quality`);
+}
+
+export function getExcludedFrames(workspaceId: string): Promise<{ filenames: string[] }> {
+  return request(`/workspaces/${workspaceId}/excluded_frames`);
+}
+
+export function saveExcludedFrames(workspaceId: string, filenames: string[]): Promise<{ filenames: string[] }> {
+  return request(`/workspaces/${workspaceId}/excluded_frames`, {
+    method: "PUT",
+    body: JSON.stringify({ filenames }),
+  });
+}
+
 export function framePreviewUrl(workspaceId: string, kind: FrameKind, filename: string): string {
   const query = new URLSearchParams({ kind, filename });
   return `${API_BASE}/workspaces/${workspaceId}/frames/preview?${query.toString()}`;
@@ -122,9 +139,26 @@ export function previewUrl(
     query.set("brightness", String(effects.brightness));
     query.set("contrast", String(effects.contrast));
     query.set("saturation", String(effects.saturation));
+    query.set("vibrance", String(effects.vibrance));
+    query.set("star_reduction", String(effects.star_reduction));
+    query.set("noise_reduction", String(effects.noise_reduction));
     query.set("sharpen", String(effects.sharpen));
   }
   return `${API_BASE}/workspaces/${workspaceId}/preview?${query.toString()}`;
+}
+
+export function getHistogram(workspaceId: string, shadowClip: number, transform?: TransformParams): Promise<Histogram> {
+  const query = new URLSearchParams({ shadow_clip: String(shadowClip) });
+  if (transform) {
+    query.set("rotation", String(transform.rotationDeg));
+    if (transform.crop) {
+      query.set("crop_x", String(transform.crop.x));
+      query.set("crop_y", String(transform.crop.y));
+      query.set("crop_width", String(transform.crop.width));
+      query.set("crop_height", String(transform.crop.height));
+    }
+  }
+  return request(`/workspaces/${workspaceId}/histogram?${query.toString()}`);
 }
 
 export function referencePreviewUrl(workspaceId: string): string {

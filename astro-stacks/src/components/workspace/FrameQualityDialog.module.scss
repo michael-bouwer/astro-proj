@@ -1,0 +1,98 @@
+.content {
+  background: var(--chakra-colors-bg-panel);
+  border-left: 1px solid var(--chakra-colors-border);
+  width: 420px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.error {
+  color: var(--chakra-colors-red-fg);
+}
+
+.empty {
+  color: var(--chakra-colors-fg-muted);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--chakra-colors-border);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--chakra-colors-brand-solid);
+  }
+
+  input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.thumbnail {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--chakra-colors-bg);
+}
+
+.itemBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.itemFilename {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--chakra-colors-border);
+}
+
+.saveHint {
+  font-size: 0.75rem;
+  color: var(--chakra-colors-green-fg);
+}

@@ -72,6 +72,40 @@ def _stretched(bgr_f32, method, midtone, scale, target_bkg, shadow_clip):
     return auto_stretch(bgr_f32, target_bkg, shadow_clip)
 
 
+def compute_histogram(bgr_f32, bins=256, shadow_clip=-2.8):
+    """Per-channel (B, G, R) histogram of the linear data -- what
+    target_bkg/shadow_clip actually operate on, so the Stretch tab can show
+    where a setting lands relative to the real data instead of tuning blind.
+    Downsampled for speed, since the overall shape is what matters here, not
+    an exact per-pixel count. Counts are log1p-compressed: a small handful of
+    bright star pixels next to a huge background peak would otherwise round
+    to an invisible bar on a linear count axis.
+
+    Also returns the black point "auto" stretch would currently compute from
+    this same data (on the same absolute scale as display_max below), so the
+    frontend can mark exactly where that method's shadow clip lands.
+    """
+    flat = bgr_f32[::4, ::4, :] if bgr_f32.size > 4_000_000 else bgr_f32
+    display_max = float(np.percentile(flat, 99.5))
+    if display_max <= 0:
+        display_max = float(np.max(flat)) or 1.0
+
+    channels = {}
+    for i, name in enumerate(("b", "g", "r")):
+        channel_data = np.clip(flat[:, :, i], 0, display_max)
+        counts, _ = np.histogram(channel_data, bins=bins, range=(0, display_max))
+        channels[name] = np.log1p(counts).tolist()
+
+    true_max = float(np.max(bgr_f32))
+    normalized = _normalize(bgr_f32)
+    median = float(np.median(normalized))
+    madn = 1.4826 * float(np.median(np.abs(normalized - median)))
+    black_point_normalized = float(np.clip(median + shadow_clip * madn, 0.0, median)) if madn > 0 else 0.0
+    black_point = black_point_normalized * true_max
+
+    return {"display_max": display_max, "bins": bins, "black_point": black_point, **channels}
+
+
 def to_uint8(bgr_f32, method="auto", midtone=0.25, scale=1000.0, target_bkg=0.25, shadow_clip=-2.8):
     stretched = _stretched(bgr_f32, method, midtone, scale, target_bkg, shadow_clip)
     return (stretched * 255).astype(np.uint8)

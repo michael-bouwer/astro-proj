@@ -7,12 +7,50 @@ Standard formula (bias signal is present in every exposure, including darks):
 Any of the three calibration frame sets may be missing; each step is skipped
 and calibration degrades gracefully rather than failing.
 """
+import hashlib
+import json
 import os
 
 import numpy as np
 
 from . import raw_io
 from .stacking import cleanup_memmap, create_memmap_stack, median_combine
+
+CACHE_DIRNAME = "calibration_cache"
+
+
+def calibration_signature(frame_paths):
+    """A cheap fingerprint of a calibration frame set (filename + mtime + size
+    per file) -- changes the moment any file is added, removed, or modified,
+    so a stale cached master is never silently reused.
+    """
+    parts = []
+    for path in frame_paths:
+        stat = os.stat(path)
+        parts.append(f"{os.path.basename(path)}:{stat.st_mtime_ns}:{stat.st_size}")
+    return hashlib.sha1("|".join(sorted(parts)).encode("utf-8")).hexdigest()
+
+
+def load_cached_master(cache_dir, kind, signature):
+    """The cached master_bias/master_dark/master_flat array for `kind`, if
+    cache_dir has one whose signature still matches -- None otherwise (never
+    built yet, or the source frames changed since it was)."""
+    meta_path = os.path.join(cache_dir, f"{kind}.json")
+    array_path = os.path.join(cache_dir, f"{kind}.npy")
+    if not (os.path.isfile(meta_path) and os.path.isfile(array_path)):
+        return None
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    if meta.get("signature") != signature:
+        return None
+    return np.load(array_path)
+
+
+def save_cached_master(cache_dir, kind, signature, master):
+    os.makedirs(cache_dir, exist_ok=True)
+    np.save(os.path.join(cache_dir, f"{kind}.npy"), master)
+    with open(os.path.join(cache_dir, f"{kind}.json"), "w", encoding="utf-8") as f:
+        json.dump({"signature": signature}, f)
 
 
 def _require_same_shape(a_shape, b_shape, a_label, b_label):

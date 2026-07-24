@@ -44,6 +44,14 @@ def _settings_json_path(workspace_id):
     return os.path.join(_workspace_dir(workspace_id), "settings.json")
 
 
+def _frame_quality_json_path(workspace_id):
+    return os.path.join(_workspace_dir(workspace_id), "frame_quality.json")
+
+
+def _excluded_frames_json_path(workspace_id):
+    return os.path.join(_workspace_dir(workspace_id), "excluded_frames.json")
+
+
 def _version_dir(workspace_id, version_id):
     return os.path.join(_versions_dir(workspace_id), version_id)
 
@@ -162,6 +170,42 @@ def load_settings(workspace_id):
     path = _settings_json_path(workspace_id)
     if not os.path.isfile(path):
         return None
+    return _read_json(path)
+
+
+def save_frame_quality(workspace_id, frame_quality):
+    """Persists per-light-frame status/SNR from the last run (see
+    orchestrator.run_pipeline's frame_quality return value) -- lets the
+    frame-review UI show this after the in-memory job record it also came
+    with is gone (workspace reopened later, or the backend restarted).
+    """
+    _load_workspace_raw(workspace_id)
+    _write_json(_frame_quality_json_path(workspace_id), frame_quality)
+
+
+def load_frame_quality(workspace_id):
+    _load_workspace_raw(workspace_id)
+    path = _frame_quality_json_path(workspace_id)
+    if not os.path.isfile(path):
+        return []
+    return _read_json(path)
+
+
+def save_excluded_frames(workspace_id, filenames):
+    """Light frames the user has manually excluded from future runs (on top
+    of whatever the automatic quality rejection would already drop) --
+    stored per-workspace so the exclusion persists across runs and reopening
+    the workspace, until explicitly changed again.
+    """
+    _load_workspace_raw(workspace_id)
+    _write_json(_excluded_frames_json_path(workspace_id), sorted(set(filenames)))
+
+
+def load_excluded_frames(workspace_id):
+    _load_workspace_raw(workspace_id)
+    path = _excluded_frames_json_path(workspace_id)
+    if not os.path.isfile(path):
+        return []
     return _read_json(path)
 
 

@@ -21,6 +21,7 @@ import { VersionHistoryDrawer } from "../versions/VersionHistoryDrawer";
 import { SaveVersionDialog } from "../versions/SaveVersionDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
+import { FrameQualityDialog } from "./FrameQualityDialog";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import styles from "./WorkspaceDetail.module.scss";
 
@@ -77,6 +78,7 @@ export function WorkspaceDetail({
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [frameQualityOpen, setFrameQualityOpen] = useState(false);
 
   // Gates the auto-save effect below until the initial settings fetch has
   // resolved -- otherwise the still-default state this component mounts with
@@ -100,10 +102,16 @@ export function WorkspaceDetail({
   useEffect(() => {
     getWorkspaceSettings(workspaceId)
       .then((saved) => {
-        if (saved.stretch) setStretchParams(saved.stretch);
-        if (saved.effects) setEffectsParams(saved.effects);
-        if (saved.transform) setTransformParams(saved.transform);
-        if (saved.run) setRunParams(saved.run);
+        // Merged onto the defaults rather than replacing wholesale -- a
+        // workspace's settings.json may predate a field added to one of
+        // these groups since it was last saved (e.g. vibrance/star_reduction/
+        // noise_reduction added to effects after settings persistence
+        // shipped), and a `value` prop of `undefined` crashes LabeledSlider's
+        // `.toFixed()` call.
+        if (saved.stretch) setStretchParams({ ...DEFAULT_STRETCH_PARAMS, ...saved.stretch });
+        if (saved.effects) setEffectsParams({ ...DEFAULT_EFFECTS_PARAMS, ...saved.effects });
+        if (saved.transform) setTransformParams({ ...DEFAULT_TRANSFORM_PARAMS, ...saved.transform });
+        if (saved.run) setRunParams({ ...DEFAULT_RUN_PARAMS, ...saved.run });
       })
       .catch(() => {
         // no saved settings yet (or a transient error) -- fall back to defaults
@@ -233,6 +241,7 @@ export function WorkspaceDetail({
       <WorkspaceHeader
         workspace={workspace}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenFrameQuality={() => setFrameQualityOpen(true)}
         onSaveVersion={() => setSaveOpen(true)}
         saveDisabled={!masterLoaded}
         onEdit={() => setEditOpen(true)}
@@ -286,6 +295,11 @@ export function WorkspaceDetail({
       </div>
 
       <VersionHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} workspaceId={workspaceId} />
+      <FrameQualityDialog
+        open={frameQualityOpen}
+        onClose={() => setFrameQualityOpen(false)}
+        workspaceId={workspaceId}
+      />
       <SaveVersionDialog
         open={saveOpen}
         onClose={() => setSaveOpen(false)}

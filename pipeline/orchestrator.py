@@ -47,30 +47,49 @@ def _clip_warning(kind, master_frame):
     )
 
 
-def build_calibration_masters(dataset_dir, progress_cb=None):
+def build_calibration_masters(dataset_dir, output_dir=None, progress_cb=None):
+    """output_dir, if given, doubles as a cache: a master bias/dark/flat is
+    only actually rebuilt (median-combining every raw frame in that set, the
+    expensive part) if the corresponding source folder's contents have
+    changed since the last run -- re-stacking the same dataset repeatedly, or
+    across integration-method/sigma experiments, doesn't pay that cost again.
+    """
     progress_cb = progress_cb or _noop
     warnings = []
+    cache_dir = os.path.join(output_dir, calibration.CACHE_DIRNAME) if output_dir else None
 
     bias_files = raw_io.list_frames(os.path.join(dataset_dir, "biases"))
     dark_files = raw_io.list_frames(os.path.join(dataset_dir, "darks"))
     flat_files = raw_io.list_frames(os.path.join(dataset_dir, "flats"))
 
-    progress_cb("calibration", 0, f"Building master bias ({len(bias_files)} frames)...")
-    master_bias = calibration.build_master_frame(bias_files) if bias_files else None
+    def build_or_reuse(kind, files, step_pct):
+        if not files:
+            return None
+        if cache_dir:
+            signature = calibration.calibration_signature(files)
+            cached = calibration.load_cached_master(cache_dir, kind, signature)
+            if cached is not None:
+                progress_cb("calibration", step_pct, f"Reusing cached master {kind} ({len(files)} frames)...")
+                return cached
+        progress_cb("calibration", step_pct, f"Building master {kind} ({len(files)} frames)...")
+        master = calibration.build_master_frame(files)
+        if cache_dir:
+            calibration.save_cached_master(cache_dir, kind, signature, master)
+        return master
+
+    master_bias = build_or_reuse("bias", bias_files, 0)
     if master_bias is not None:
         warning = _clip_warning("bias", master_bias)
         if warning:
             warnings.append(warning)
 
-    progress_cb("calibration", 33, f"Building master dark ({len(dark_files)} frames)...")
-    master_dark = calibration.build_master_frame(dark_files) if dark_files else None
+    master_dark = build_or_reuse("dark", dark_files, 33)
     if master_dark is not None:
         warning = _clip_warning("dark", master_dark)
         if warning:
             warnings.append(warning)
 
-    progress_cb("calibration", 66, f"Building master flat ({len(flat_files)} frames)...")
-    master_flat = calibration.build_master_frame(flat_files) if flat_files else None
+    master_flat = build_or_reuse("flat", flat_files, 66)
     if master_flat is not None:
         warning = _clip_warning("flat", master_flat)
         if warning:
@@ -88,6 +107,7 @@ def run_pipeline(
     apply_dark=True,
     apply_flat=True,
     integration_method="sigma_clip",
+    excluded_frames=None,
     progress_cb=None,
 ):
     """Runs the full lights pipeline for a dataset directory and saves the linear master.
@@ -97,13 +117,19 @@ def run_pipeline(
     to output_dir if given, otherwise dataset_dir -- workspaces write into their own
     directory so source frame folders (which may be referenced in place, not owned
     by this app) are never modified.
+
+    excluded_frames -- basenames the caller wants skipped entirely (a manual
+    override on top of the automatic quality rejection below; see
+    workspace.load_excluded_frames) -- never even get decoded/aligned.
     """
     progress_cb = progress_cb or _noop
     output_dir = output_dir or dataset_dir
     if integration_method not in INTEGRATION_METHODS:
         raise ValueError(f"integration_method must be one of {INTEGRATION_METHODS}, got {integration_method!r}")
 
-    light_files = raw_io.list_frames(os.path.join(dataset_dir, "lights"))
+    excluded_frames = set(excluded_frames or ())
+    all_light_files = raw_io.list_frames(os.path.join(dataset_dir, "lights"))
+    light_files = [path for path in all_light_files if os.path.basename(path) not in excluded_frames]
     if len(light_files) < 2:
         raise ValueError("Need at least 2 light frames to stack.")
 
@@ -111,7 +137,9 @@ def run_pipeline(
     master_bias = master_dark = normalized_flat = None
     calibration_warnings = []
     if need_calibration_masters:
-        built_bias, built_dark, built_flat, calibration_warnings = build_calibration_masters(dataset_dir, progress_cb)
+        built_bias, built_dark, built_flat, calibration_warnings = build_calibration_masters(
+            dataset_dir, output_dir=output_dir, progress_cb=progress_cb
+        )
         master_bias = built_bias
         master_dark = built_dark if apply_dark else None
         normalized_flat = built_flat if apply_flat else None
@@ -143,8 +171,11 @@ def run_pipeline(
     successful = 1
     # Per-frame SNR (dB), parallel to the frames actually written into
     # mem_stack -- feeds compute_frame_weights below so a frame's measured
-    # quality controls how much it counts toward the combine.
+    # quality controls how much it counts toward the combine. successful_filenames
+    # tracks the same frames by name, in the same order, for frame_quality below.
     qualities = [color.estimate_snr(reference.bgr)]
+    successful_filenames = [os.path.basename(light_files[reference_index])]
+    failed_filenames = []
 
     try:
         remaining = light_files[:reference_index] + light_files[reference_index + 1 :]
@@ -153,13 +184,16 @@ def run_pipeline(
                 frame = calibrate(raw_io.load_frame(path))
                 result = reference.align(frame)
                 if result is None:
+                    failed_filenames.append(os.path.basename(path))
                     continue
                 aligned, valid_mask = result
                 mem_stack[successful] = aligned
                 coverage_stack[successful] = valid_mask
                 qualities.append(color.estimate_snr(aligned))
+                successful_filenames.append(os.path.basename(path))
                 successful += 1
             except Exception:
+                failed_filenames.append(os.path.basename(path))
                 continue
             progress_cb("aligning", (idx / len(remaining)) * 100, f"Aligned frame {idx}/{len(remaining)}")
 
@@ -168,6 +202,22 @@ def run_pipeline(
 
         weights, kept = compute_frame_weights(qualities, reject_sigma=QUALITY_REJECT_SIGMA)
         quality_rejected_count = int((~kept).sum())
+
+        # Per-frame outcome for every light frame this run considered (or was
+        # told to skip) -- feeds the frame-review UI. successful_filenames,
+        # qualities, and kept are all built/indexed in lockstep above.
+        frame_quality = [
+            {"filename": filename, "status": "included" if is_kept else "quality_rejected", "snr_db": quality}
+            for filename, quality, is_kept in zip(successful_filenames, qualities, kept.tolist())
+        ]
+        frame_quality += [{"filename": filename, "status": "failed_to_align", "snr_db": None} for filename in failed_filenames]
+        all_basenames = {os.path.basename(path) for path in all_light_files}
+        frame_quality += [
+            {"filename": filename, "status": "manually_excluded", "snr_db": None}
+            for filename in sorted(excluded_frames)
+            if filename in all_basenames
+        ]
+        frame_quality.sort(key=lambda entry: entry["filename"])
 
         progress_cb("stacking", 0, f"Stacking {successful} frames ({integration_method})...")
         if integration_method == "sigma_clip":
@@ -212,4 +262,5 @@ def run_pipeline(
         "width": width,
         "height": height,
         "calibration_warnings": calibration_warnings,
+        "frame_quality": frame_quality,
     }

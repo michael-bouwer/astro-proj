@@ -1,3 +1,6 @@
+import os
+import time
+
 import cv2
 import numpy as np
 import pytest
@@ -183,6 +186,47 @@ def test_stretch_output_ranges():
     assert u16.dtype == np.uint16 and u16.min() >= 0 and u16.max() <= 65535
 
 
+def test_compute_histogram_shape_and_keys():
+    rng = _rng()
+    img = make_light_frame(rng).astype(np.float32)
+
+    hist = stretch.compute_histogram(img, bins=128)
+
+    assert set(hist.keys()) == {"display_max", "bins", "black_point", "b", "g", "r"}
+    assert hist["bins"] == 128
+    assert len(hist["b"]) == len(hist["g"]) == len(hist["r"]) == 128
+    assert hist["display_max"] > 0
+    assert 0.0 <= hist["black_point"] <= hist["display_max"]
+
+
+def test_compute_histogram_counts_are_log_compressed_and_nonnegative():
+    img = np.full((50, 50, 3), 700.0, dtype=np.float32)
+    img[10:40, 10:40] = 30000.0  # a big bright block, guaranteed to land in a high bin
+
+    hist = stretch.compute_histogram(img, bins=64)
+
+    assert all(v >= 0 for v in hist["b"])
+    # log1p-compressed counts should never exceed log1p(total pixel count)
+    assert max(hist["g"]) <= np.log1p(img.shape[0] * img.shape[1]) + 1e-6
+
+
+def test_compute_histogram_black_point_matches_auto_stretch_shadow_clip():
+    rng = _rng()
+    img = np.clip(rng.normal(1000, 40, (60, 60, 3)), 0, None).astype(np.float32)
+    img[5:10, 5:10] = 30000  # a star, so the background isn't the whole image's max
+
+    hist = stretch.compute_histogram(img, shadow_clip=-2.8)
+
+    # Re-derive the same black point auto_stretch would compute internally,
+    # and confirm compute_histogram reports the same value on its own scale.
+    normalized = img / np.max(img)
+    median = float(np.median(normalized))
+    madn = 1.4826 * float(np.median(np.abs(normalized - median)))
+    expected_black_point = np.clip(median - 2.8 * madn, 0.0, median) * float(np.max(img))
+
+    assert hist["black_point"] == pytest.approx(expected_black_point, rel=1e-4)
+
+
 def test_auto_stretch_lifts_dim_linear_background_near_target():
     # A dim linear background relative to a bright star peak -- the scenario that
     # caused the reported "black screen": on genuinely linear data, a fixed
@@ -321,6 +365,66 @@ def test_defringe_star_edges_leaves_distant_purple_color_untouched():
     assert np.allclose(fixed[120:135, 120:135], img[120:135, 120:135])
 
 
+def test_build_calibration_masters_reuses_cache_when_unchanged(synthetic_dataset, tmp_path, monkeypatch):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    call_count = {"n": 0}
+    original_build = calibration.build_master_frame
+
+    def counting_build(frame_paths, progress_cb=None):
+        call_count["n"] += 1
+        return original_build(frame_paths, progress_cb)
+
+    monkeypatch.setattr(calibration, "build_master_frame", counting_build)
+
+    orchestrator.build_calibration_masters(str(synthetic_dataset), output_dir=str(output_dir))
+    assert call_count["n"] == 3  # bias, dark, flat all built fresh the first time
+
+    orchestrator.build_calibration_masters(str(synthetic_dataset), output_dir=str(output_dir))
+    assert call_count["n"] == 3  # second call reused the cache -- no new builds
+
+
+def test_build_calibration_masters_rebuilds_when_source_changes(synthetic_dataset, tmp_path, monkeypatch):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    call_count = {"n": 0}
+    original_build = calibration.build_master_frame
+
+    def counting_build(frame_paths, progress_cb=None):
+        call_count["n"] += 1
+        return original_build(frame_paths, progress_cb)
+
+    monkeypatch.setattr(calibration, "build_master_frame", counting_build)
+
+    orchestrator.build_calibration_masters(str(synthetic_dataset), output_dir=str(output_dir))
+    assert call_count["n"] == 3
+
+    # Modify just one dark frame's mtime -- only the dark cache should invalidate.
+    dark_files = sorted((synthetic_dataset / "darks").glob("*.png"))
+    future = time.time() + 10
+    os.utime(dark_files[0], (future, future))
+
+    orchestrator.build_calibration_masters(str(synthetic_dataset), output_dir=str(output_dir))
+    assert call_count["n"] == 4
+
+
+def test_build_calibration_masters_without_output_dir_never_caches(synthetic_dataset, monkeypatch):
+    call_count = {"n": 0}
+    original_build = calibration.build_master_frame
+
+    def counting_build(frame_paths, progress_cb=None):
+        call_count["n"] += 1
+        return original_build(frame_paths, progress_cb)
+
+    monkeypatch.setattr(calibration, "build_master_frame", counting_build)
+
+    orchestrator.build_calibration_masters(str(synthetic_dataset))
+    orchestrator.build_calibration_masters(str(synthetic_dataset))
+    assert call_count["n"] == 6  # no output_dir -- nothing to cache into, rebuilds every time
+
+
 def test_run_pipeline_end_to_end(synthetic_dataset):
     result = orchestrator.run_pipeline(str(synthetic_dataset), sigma=3.0, apply_dark=True, apply_flat=True)
 
@@ -341,6 +445,30 @@ def test_run_pipeline_end_to_end(synthetic_dataset):
     # preview's global-max-based normalization.
     assert master.max() < 1e6
     assert result["calibration_warnings"] == []
+
+
+def test_run_pipeline_frame_quality_lists_every_light_frame(synthetic_dataset):
+    result = orchestrator.run_pipeline(str(synthetic_dataset))
+
+    filenames = {entry["filename"] for entry in result["frame_quality"]}
+    assert filenames == {"light_0.png", "light_1.png", "light_2.png", "light_3.png"}
+    assert all(entry["status"] == "included" for entry in result["frame_quality"])
+    assert all(entry["snr_db"] is not None for entry in result["frame_quality"])
+
+
+def test_run_pipeline_excluded_frames_are_skipped_and_reported(synthetic_dataset):
+    result = orchestrator.run_pipeline(str(synthetic_dataset), excluded_frames=["light_0.png"])
+
+    assert result["light_frame_count"] == 3
+    by_filename = {entry["filename"]: entry for entry in result["frame_quality"]}
+    assert by_filename["light_0.png"]["status"] == "manually_excluded"
+    assert by_filename["light_0.png"]["snr_db"] is None
+    assert by_filename["light_1.png"]["status"] == "included"
+
+
+def test_run_pipeline_raises_when_exclusion_leaves_too_few_frames(synthetic_dataset):
+    with pytest.raises(ValueError, match="at least 2"):
+        orchestrator.run_pipeline(str(synthetic_dataset), excluded_frames=["light_0.png", "light_1.png", "light_2.png"])
 
 
 def test_run_pipeline_warns_on_a_saturated_flat_channel(tmp_path):
@@ -592,6 +720,60 @@ def test_adjust_saturation_zero_desaturates_to_equal_channels():
     assert np.ptp(desaturated[0, 0]) < 2  # B/G/R now nearly equal (grayscale)
 
 
+def test_adjust_vibrance_zero_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.adjust_vibrance(img, 0.0) is img
+
+
+def test_adjust_vibrance_boosts_moderate_saturation_more_than_already_vivid():
+    moderate = np.array([[[150, 120, 180]]], dtype=np.uint8)  # B, G, R -- some saturation
+    vivid = np.array([[[255, 0, 100]]], dtype=np.uint8)  # already fully saturated
+
+    def saturation_of(img):
+        hsv = cv2.cvtColor(img.astype(np.float32) / 255.0, cv2.COLOR_BGR2HSV)
+        return float(hsv[0, 0, 1])
+
+    moderate_gain = saturation_of(effects.adjust_vibrance(moderate, 0.8)) - saturation_of(moderate)
+    vivid_gain = saturation_of(effects.adjust_vibrance(vivid, 0.8)) - saturation_of(vivid)
+    assert moderate_gain > vivid_gain >= 0
+
+
+def test_reduce_stars_zero_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    mask = np.zeros((20, 20), dtype=np.float32)
+    assert effects.reduce_stars(img, 0.0, star_mask=mask) is img
+
+
+def test_reduce_stars_dims_the_outer_ring_but_keeps_the_center_bright():
+    img = np.full((40, 40, 3), 30, dtype=np.uint8)  # dim background
+    img[15:25, 15:25] = 255  # bright star core
+    mask = np.zeros((40, 40), dtype=np.float32)
+    mask[15:25, 15:25] = 1.0
+
+    reduced = effects.reduce_stars(img, 1.0, star_mask=mask)
+
+    assert reduced[19, 19].mean() > 200  # near-center: still bright
+    assert reduced[16, 16].mean() < img[16, 16].mean()  # near the original edge: dimmed toward background
+
+
+def test_reduce_noise_zero_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.reduce_noise(img, 0.0) is img
+
+
+def test_reduce_noise_smooths_background_but_protects_masked_stars():
+    rng = _rng()
+    img = np.clip(100.0 + rng.normal(0, 20, (40, 40, 3)), 0, 255).astype(np.uint8)
+    img[15:25, 15:25] = 255  # a bright, noise-free star core
+    mask = np.zeros((40, 40), dtype=np.float32)
+    mask[15:25, 15:25] = 1.0
+
+    denoised = effects.reduce_noise(img, 1.0, star_mask=mask)
+
+    assert denoised[:10, :10].std() < img[:10, :10].std()  # background noise reduced
+    assert abs(int(denoised[19, 19].mean()) - 255) < 10  # star core protected
+
+
 def test_sharpen_zero_is_a_noop():
     img = np.full((20, 20, 3), 100, dtype=np.uint8)
     assert effects.sharpen(img, 0.0) is img
@@ -619,3 +801,19 @@ def test_effects_apply_preserves_shape_and_dtype_across_formats():
     img_u16 = stretch.to_uint16(make_light_frame(rng).astype(np.float32))
     result_u16 = effects.apply(img_u16, brightness=0.1, contrast=0.1, saturation=1.3, sharpen_amount=0.5)
     assert result_u16.shape == img_u16.shape and result_u16.dtype == np.uint16
+
+
+def test_effects_apply_with_every_new_param_together():
+    rng = _rng()
+    img = stretch.to_uint8(make_light_frame(rng).astype(np.float32))
+    result = effects.apply(
+        img,
+        brightness=0.05,
+        contrast=0.05,
+        saturation=1.1,
+        vibrance=0.4,
+        star_reduction=0.5,
+        noise_reduction=0.5,
+        sharpen_amount=0.3,
+    )
+    assert result.shape == img.shape and result.dtype == img.dtype

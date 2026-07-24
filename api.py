@@ -95,6 +95,10 @@ class WorkspaceRunRequest(BaseModel):
     integration_method: str = "sigma_clip"
 
 
+class ExcludedFramesRequest(BaseModel):
+    filenames: list[str]
+
+
 class SaveVersionRequest(BaseModel):
     note: str = ""
     method: str = "auto"
@@ -123,6 +127,9 @@ class SaveVersionRequest(BaseModel):
     brightness: float = 0.0
     contrast: float = 0.0
     saturation: float = 1.0
+    vibrance: float = 0.0
+    star_reduction: float = 0.0
+    noise_reduction: float = 0.0
     sharpen: float = 0.0
 
 
@@ -150,6 +157,9 @@ class EffectsSettings(BaseModel):
     brightness: float = 0.0
     contrast: float = 0.0
     saturation: float = 1.0
+    vibrance: float = 0.0
+    star_reduction: float = 0.0
+    noise_reduction: float = 0.0
     sharpen: float = 0.0
 
 
@@ -188,6 +198,9 @@ class ExportRequest(BaseModel):
     brightness: float = 0.0
     contrast: float = 0.0
     saturation: float = 1.0
+    vibrance: float = 0.0
+    star_reduction: float = 0.0
+    noise_reduction: float = 0.0
     sharpen: float = 0.0
     format: str = "tiff"  # "tiff" | "png" | "jpeg"
     destination_path: str
@@ -256,6 +269,29 @@ def get_workspace_frames(workspace_id: str):
     return workspace.list_frames_in_workspace(workspace_id)
 
 
+@app.get("/workspaces/{workspace_id}/frame_quality")
+def get_workspace_frame_quality(workspace_id: str):
+    """Per-light-frame outcome (included/quality_rejected/failed_to_align/
+    manually_excluded) with SNR, from the most recently completed pipeline
+    run -- empty until the pipeline has run at least once.
+    """
+    _workspace_or_404(workspace_id)
+    return {"frame_quality": workspace.load_frame_quality(workspace_id)}
+
+
+@app.get("/workspaces/{workspace_id}/excluded_frames")
+def get_workspace_excluded_frames(workspace_id: str):
+    _workspace_or_404(workspace_id)
+    return {"filenames": workspace.load_excluded_frames(workspace_id)}
+
+
+@app.put("/workspaces/{workspace_id}/excluded_frames")
+def put_workspace_excluded_frames(workspace_id: str, req: ExcludedFramesRequest):
+    _workspace_or_404(workspace_id)
+    workspace.save_excluded_frames(workspace_id, req.filenames)
+    return {"filenames": workspace.load_excluded_frames(workspace_id)}
+
+
 @app.get("/workspaces/{workspace_id}/settings")
 def get_workspace_settings(workspace_id: str):
     _workspace_or_404(workspace_id)
@@ -296,6 +332,7 @@ def _run_pipeline_job(job_id, workspace_id, source_path, output_dir, req: Worksp
 
     try:
         jobs[job_id].update(status="running")
+        excluded_frames = workspace.load_excluded_frames(workspace_id)
         result = orchestrator.run_pipeline(
             source_path,
             output_dir=output_dir,
@@ -303,8 +340,10 @@ def _run_pipeline_job(job_id, workspace_id, source_path, output_dir, req: Worksp
             apply_dark=req.apply_dark,
             apply_flat=req.apply_flat,
             integration_method=req.integration_method,
+            excluded_frames=excluded_frames,
             progress_cb=progress_cb,
         )
+        workspace.save_frame_quality(workspace_id, result["frame_quality"])
         workspace.touch_workspace(workspace_id)
         jobs[job_id].update(status="done", percent=100, overall_percent=100.0, result=result)
     except Exception as exc:
@@ -373,6 +412,9 @@ def workspace_preview(
     brightness: float = 0.0,
     contrast: float = 0.0,
     saturation: float = 1.0,
+    vibrance: float = 0.0,
+    star_reduction: float = 0.0,
+    noise_reduction: float = 0.0,
     sharpen: float = 0.0,
 ):
     _workspace_or_404(workspace_id)
@@ -389,9 +431,44 @@ def workspace_preview(
         transformed, method=method, midtone=midtone, scale=scale, target_bkg=target_bkg, shadow_clip=shadow_clip
     )
     preview_u8 = effects.apply(
-        preview_u8, brightness=brightness, contrast=contrast, saturation=saturation, sharpen_amount=sharpen
+        preview_u8,
+        brightness=brightness,
+        contrast=contrast,
+        saturation=saturation,
+        vibrance=vibrance,
+        star_reduction=star_reduction,
+        noise_reduction=noise_reduction,
+        sharpen_amount=sharpen,
     )
     return Response(content=raw_io.encode_jpeg(preview_u8), media_type="image/jpeg")
+
+
+@app.get("/workspaces/{workspace_id}/histogram")
+def workspace_histogram(
+    workspace_id: str,
+    shadow_clip: float = -2.8,
+    rotation: float = 0.0,
+    crop_x: float | None = None,
+    crop_y: float | None = None,
+    crop_width: float | None = None,
+    crop_height: float | None = None,
+):
+    """The current rotated/cropped master's own linear-data distribution --
+    doesn't depend on the stretch method/midtone/target_bkg, only on what
+    region of the frame is in play, so the frontend only needs to refetch
+    this on rotation/crop changes, not on every stretch-slider tick.
+    """
+    _workspace_or_404(workspace_id)
+    master = loaded_masters.get(workspace_id)
+    if master is None:
+        raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
+
+    try:
+        transformed = transform.apply(master, rotation, _crop_rect(crop_x, crop_y, crop_width, crop_height))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return stretch.compute_histogram(transformed, shadow_clip=shadow_clip)
 
 
 @app.get("/workspaces/{workspace_id}/reference_preview")
@@ -434,7 +511,14 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
     if req.fix_halos:
         stretched_u16 = halos.fix_star_halos(stretched_u16)
     stretched_u16 = effects.apply(
-        stretched_u16, brightness=req.brightness, contrast=req.contrast, saturation=req.saturation, sharpen_amount=req.sharpen
+        stretched_u16,
+        brightness=req.brightness,
+        contrast=req.contrast,
+        saturation=req.saturation,
+        vibrance=req.vibrance,
+        star_reduction=req.star_reduction,
+        noise_reduction=req.noise_reduction,
+        sharpen_amount=req.sharpen,
     )
 
     thumbnail_u8 = (stretched_u16 // 256).astype("uint8")
@@ -472,7 +556,14 @@ def export_workspace(workspace_id: str, req: ExportRequest):
     if req.fix_halos:
         stretched_u16 = halos.fix_star_halos(stretched_u16)
     stretched_u16 = effects.apply(
-        stretched_u16, brightness=req.brightness, contrast=req.contrast, saturation=req.saturation, sharpen_amount=req.sharpen
+        stretched_u16,
+        brightness=req.brightness,
+        contrast=req.contrast,
+        saturation=req.saturation,
+        vibrance=req.vibrance,
+        star_reduction=req.star_reduction,
+        noise_reduction=req.noise_reduction,
+        sharpen_amount=req.sharpen,
     )
 
     if req.format == "jpeg":
