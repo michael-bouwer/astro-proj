@@ -25,6 +25,21 @@
   color: var(--chakra-colors-red-fg);
 }
 
+.controlsRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.searchInput {
+  flex: 1;
+  max-width: 320px;
+}
+
+.sortSelect {
+  max-width: 400px;
+}
+
 .empty {
   border: 1px dashed var(--chakra-colors-border);
   border-radius: 10px;
@@ -56,6 +71,43 @@
   &:hover {
     border-color: var(--chakra-colors-brand-solid);
   }
+}
+
+.cardDragOver {
+  border-color: var(--chakra-colors-brand-solid);
+  box-shadow: 0 0 0 2px var(--chakra-colors-brand-solid);
+}
+
+// "No sort" is selected -- cards are draggable via pointer events (see
+// WorkspaceList.tsx's handleCardPointerDown), grab cursor hints at that.
+.cardDraggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cardDragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.categoryTag {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  color: var(--chakra-colors-fg-muted);
+  background: var(--chakra-colors-bg-subtle);
+  border: 1px dashed var(--chakra-colors-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--chakra-colors-brand-solid);
+    color: var(--chakra-colors-fg);
+  }
+}
+
+.categoryInput {
+  max-width: 180px;
 }
 
 .path {
@@ -94,4 +146,16 @@
   right: 8px;
   display: flex;
   gap: 2px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.pageLabel {
+  font-size: 0.8rem;
+  color: var(--chakra-colors-fg-muted);
 }

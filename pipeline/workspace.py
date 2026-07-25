@@ -79,6 +79,22 @@ def _validate_source_path(source_path):
     return source_path
 
 
+def _next_sort_order():
+    """New workspaces default to the end of the manual drag-order sequence,
+    same as appending to a list -- otherwise a fresh workspace would default
+    to sort_order 0 and jump to the front of "No sort" the moment anyone
+    reorders anything.
+    """
+    if not os.path.isdir(WORKSPACES_ROOT):
+        return 0
+    max_order = -1
+    for workspace_id in os.listdir(WORKSPACES_ROOT):
+        path = _workspace_json_path(workspace_id)
+        if os.path.isfile(path):
+            max_order = max(max_order, _read_json(path).get("sort_order", -1))
+    return max_order + 1
+
+
 def create_workspace(name, source_path):
     source_path = _validate_source_path(source_path)
 
@@ -92,6 +108,9 @@ def create_workspace(name, source_path):
         "source_path": source_path,
         "created_at": _now(),
         "updated_at": _now(),
+        "favourite": False,
+        "category": None,
+        "sort_order": _next_sort_order(),
     }
     _write_json(_workspace_json_path(workspace_id), workspace)
     return workspace
@@ -101,7 +120,13 @@ def _load_workspace_raw(workspace_id):
     path = _workspace_json_path(workspace_id)
     if not os.path.isfile(path):
         raise KeyError(f"Unknown workspace: {workspace_id}")
-    return _read_json(path)
+    workspace = _read_json(path)
+    # Backfills workspaces created before favourite/category/sort_order
+    # existed -- no migration script, just sensible defaults on read.
+    workspace.setdefault("favourite", False)
+    workspace.setdefault("category", None)
+    workspace.setdefault("sort_order", 0)
+    return workspace
 
 
 def get_workspace(workspace_id):
@@ -126,6 +151,36 @@ def update_workspace(workspace_id, name=None, source_path=None):
     workspace["updated_at"] = _now()
     _write_json(_workspace_json_path(workspace_id), workspace)
     return workspace
+
+
+def set_category(workspace_id, category):
+    """category="" clears it (stored as None). Deliberately doesn't bump
+    updated_at -- categorizing/favouriting is list-organization bookkeeping,
+    not a change to the workspace's actual content, and "Date modified"
+    sorting should reflect the latter (renames, pipeline runs) only.
+    """
+    workspace = _load_workspace_raw(workspace_id)
+    workspace["category"] = category or None
+    _write_json(_workspace_json_path(workspace_id), workspace)
+    return workspace
+
+
+def set_favourite(workspace_id, favourite):
+    workspace = _load_workspace_raw(workspace_id)
+    workspace["favourite"] = bool(favourite)
+    _write_json(_workspace_json_path(workspace_id), workspace)
+    return workspace
+
+
+def reorder_workspaces(ordered_ids):
+    """Persists the manual "No sort" drag-order as sequential sort_order
+    values, 0..len(ordered_ids)-1, matching the given id sequence. Raises
+    KeyError (via _load_workspace_raw) if any id doesn't exist.
+    """
+    for index, workspace_id in enumerate(ordered_ids):
+        workspace = _load_workspace_raw(workspace_id)
+        workspace["sort_order"] = index
+        _write_json(_workspace_json_path(workspace_id), workspace)
 
 
 def list_workspaces():

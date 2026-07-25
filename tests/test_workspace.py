@@ -97,6 +97,95 @@ def test_get_workspace_unknown_id_raises_keyerror(isolated_workspaces_root):
         workspace.get_workspace("does-not-exist")
 
 
+def test_create_workspace_defaults_favourite_category_and_sort_order(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    assert created["favourite"] is False
+    assert created["category"] is None
+    assert created["sort_order"] == 0
+
+
+def test_create_workspace_sort_order_appends_to_the_end(synthetic_dataset, isolated_workspaces_root):
+    first = workspace.create_workspace("First", str(synthetic_dataset))
+    second = workspace.create_workspace("Second", str(synthetic_dataset))
+    assert first["sort_order"] == 0
+    assert second["sort_order"] == 1
+
+
+def test_get_workspace_backfills_defaults_for_legacy_workspace_json(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Legacy", str(synthetic_dataset))
+    # Simulates a workspace.json written before favourite/category/sort_order existed.
+    legacy = {"id": created["id"], "name": "Legacy", "source_path": str(synthetic_dataset), "created_at": "x", "updated_at": "x"}
+    workspace._write_json(workspace._workspace_json_path(created["id"]), legacy)
+
+    fetched = workspace.get_workspace(created["id"])
+    assert fetched["favourite"] is False
+    assert fetched["category"] is None
+    assert fetched["sort_order"] == 0
+
+
+def test_set_category_updates_and_persists(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    workspace.set_category(created["id"], "Orion Nebula")
+    assert workspace.get_workspace(created["id"])["category"] == "Orion Nebula"
+
+
+def test_set_category_empty_string_clears_it(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    workspace.set_category(created["id"], "Orion Nebula")
+    workspace.set_category(created["id"], "")
+    assert workspace.get_workspace(created["id"])["category"] is None
+
+
+def test_set_category_does_not_bump_updated_at(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    before = workspace.get_workspace(created["id"])["updated_at"]
+    workspace.set_category(created["id"], "Orion Nebula")
+    assert workspace.get_workspace(created["id"])["updated_at"] == before
+
+
+def test_set_category_unknown_id_raises_keyerror(isolated_workspaces_root):
+    with pytest.raises(KeyError):
+        workspace.set_category("does-not-exist", "Orion Nebula")
+
+
+def test_set_favourite_updates_and_persists(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    workspace.set_favourite(created["id"], True)
+    assert workspace.get_workspace(created["id"])["favourite"] is True
+    workspace.set_favourite(created["id"], False)
+    assert workspace.get_workspace(created["id"])["favourite"] is False
+
+
+def test_set_favourite_does_not_bump_updated_at(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    before = workspace.get_workspace(created["id"])["updated_at"]
+    workspace.set_favourite(created["id"], True)
+    assert workspace.get_workspace(created["id"])["updated_at"] == before
+
+
+def test_set_favourite_unknown_id_raises_keyerror(isolated_workspaces_root):
+    with pytest.raises(KeyError):
+        workspace.set_favourite("does-not-exist", True)
+
+
+def test_reorder_workspaces_sets_sequential_sort_order(synthetic_dataset, isolated_workspaces_root):
+    first = workspace.create_workspace("First", str(synthetic_dataset))
+    second = workspace.create_workspace("Second", str(synthetic_dataset))
+    third = workspace.create_workspace("Third", str(synthetic_dataset))
+
+    workspace.reorder_workspaces([third["id"], first["id"], second["id"]])
+
+    assert workspace.get_workspace(third["id"])["sort_order"] == 0
+    assert workspace.get_workspace(first["id"])["sort_order"] == 1
+    assert workspace.get_workspace(second["id"])["sort_order"] == 2
+
+
+def test_reorder_workspaces_unknown_id_raises_keyerror(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    with pytest.raises(KeyError):
+        workspace.reorder_workspaces([created["id"], "does-not-exist"])
+
+
 def test_run_pipeline_into_workspace_output_dir(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
     output_dir = workspace.workspace_output_dir(created["id"])

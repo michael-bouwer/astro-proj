@@ -88,6 +88,18 @@ class UpdateWorkspaceRequest(BaseModel):
     source_path: str | None = None
 
 
+class SetCategoryRequest(BaseModel):
+    category: str  # "" clears it
+
+
+class SetFavouriteRequest(BaseModel):
+    favourite: bool
+
+
+class ReorderWorkspacesRequest(BaseModel):
+    workspace_ids: list[str]
+
+
 class WorkspaceRunRequest(BaseModel):
     sigma: float = 3.0
     apply_dark: bool = True
@@ -264,6 +276,30 @@ def delete_workspace(workspace_id: str):
     workspace.delete_workspace(workspace_id)
     loaded_masters.pop(workspace_id, None)
     return {"status": "deleted"}
+
+
+@app.put("/workspaces/{workspace_id}/category")
+def set_workspace_category(workspace_id: str, req: SetCategoryRequest):
+    _workspace_or_404(workspace_id)
+    workspace.set_category(workspace_id, req.category)
+    return workspace.get_workspace(workspace_id)
+
+
+@app.put("/workspaces/{workspace_id}/favourite")
+def set_workspace_favourite(workspace_id: str, req: SetFavouriteRequest):
+    _workspace_or_404(workspace_id)
+    workspace.set_favourite(workspace_id, req.favourite)
+    return workspace.get_workspace(workspace_id)
+
+
+@app.post("/workspaces/reorder")
+def reorder_workspaces(req: ReorderWorkspacesRequest):
+    """Persists the manual "No sort" drag-order -- see workspace.reorder_workspaces."""
+    try:
+        workspace.reorder_workspaces(req.workspace_ids)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "reordered"}
 
 
 @app.get("/workspaces/{workspace_id}/frames")

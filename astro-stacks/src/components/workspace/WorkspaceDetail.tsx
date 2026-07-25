@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Text } from "@chakra-ui/react";
-import { ApiError, deleteWorkspace, getWorkspace, getWorkspaceSettings, loadMaster, saveWorkspaceSettings } from "../../api/client";
+import {
+  ApiError,
+  deleteWorkspace,
+  getWorkspace,
+  getWorkspaceSettings,
+  loadMaster,
+  saveWorkspaceSettings,
+  setWorkspaceCategory,
+  setWorkspaceFavourite,
+} from "../../api/client";
 import {
   DEFAULT_EFFECTS_PARAMS,
   type EffectsParams,
@@ -200,6 +209,27 @@ export function WorkspaceDetail({
     }
   };
 
+  const handleToggleFavourite = async () => {
+    if (!workspace) return;
+    const next = !workspace.favourite;
+    setWorkspace({ ...workspace, favourite: next });
+    try {
+      await setWorkspaceFavourite(workspaceId, next);
+    } catch {
+      refreshWorkspace(); // best-effort optimistic update; fall back to server truth on failure
+    }
+  };
+
+  const handleSetCategory = async (category: string) => {
+    if (!workspace) return;
+    setWorkspace({ ...workspace, category: category || null });
+    try {
+      await setWorkspaceCategory(workspaceId, category);
+    } catch {
+      refreshWorkspace();
+    }
+  };
+
   const handleVersionSaved = (_version: Version) => {
     setSaveOpen(false);
     setHistoryOpen(true);
@@ -246,6 +276,8 @@ export function WorkspaceDetail({
         saveDisabled={!masterLoaded}
         onEdit={() => setEditOpen(true)}
         onDelete={() => setDeleteConfirmOpen(true)}
+        onToggleFavourite={handleToggleFavourite}
+        onSetCategory={handleSetCategory}
       />
 
       <div className={styles.body}>

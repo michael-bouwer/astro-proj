@@ -13,6 +13,12 @@ export type Workspace = {
   updated_at: string;
   frame_counts: FrameCounts;
   has_master: boolean;
+  favourite: boolean;
+  category: string | null;
+  // Manual drag-order position -- only meaningful when the workspace list's
+  // sort mode is "none" (custom order); otherwise superseded by whatever
+  // sort key is selected. See WorkspaceList.tsx.
+  sort_order: number;
 };
 
 export type WorkspaceFrames = {

@@ -61,6 +61,18 @@ export function deleteWorkspace(workspaceId: string): Promise<{ status: string }
   return request(`/workspaces/${workspaceId}`, { method: "DELETE" });
 }
 
+export function setWorkspaceCategory(workspaceId: string, category: string): Promise<Workspace> {
+  return request(`/workspaces/${workspaceId}/category`, { method: "PUT", body: JSON.stringify({ category }) });
+}
+
+export function setWorkspaceFavourite(workspaceId: string, favourite: boolean): Promise<Workspace> {
+  return request(`/workspaces/${workspaceId}/favourite`, { method: "PUT", body: JSON.stringify({ favourite }) });
+}
+
+export function reorderWorkspaces(workspaceIds: string[]): Promise<{ status: string }> {
+  return request("/workspaces/reorder", { method: "POST", body: JSON.stringify({ workspace_ids: workspaceIds }) });
+}
+
 export function getWorkspaceFrames(workspaceId: string): Promise<WorkspaceFrames> {
   return request(`/workspaces/${workspaceId}/frames`);
 }
