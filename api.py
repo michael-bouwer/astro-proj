@@ -130,6 +130,7 @@ class SaveVersionRequest(BaseModel):
     vibrance: float = 0.0
     star_reduction: float = 0.0
     noise_reduction: float = 0.0
+    upscale: float = 1.0
     sharpen: float = 0.0
 
 
@@ -160,6 +161,7 @@ class EffectsSettings(BaseModel):
     vibrance: float = 0.0
     star_reduction: float = 0.0
     noise_reduction: float = 0.0
+    upscale: float = 1.0
     sharpen: float = 0.0
 
 
@@ -201,6 +203,7 @@ class ExportRequest(BaseModel):
     vibrance: float = 0.0
     star_reduction: float = 0.0
     noise_reduction: float = 0.0
+    upscale: float = 1.0
     sharpen: float = 0.0
     format: str = "tiff"  # "tiff" | "png" | "jpeg"
     destination_path: str
@@ -415,6 +418,7 @@ def workspace_preview(
     vibrance: float = 0.0,
     star_reduction: float = 0.0,
     noise_reduction: float = 0.0,
+    upscale: float = 1.0,
     sharpen: float = 0.0,
 ):
     _workspace_or_404(workspace_id)
@@ -438,6 +442,7 @@ def workspace_preview(
         vibrance=vibrance,
         star_reduction=star_reduction,
         noise_reduction=noise_reduction,
+        upscale_factor=upscale,
         sharpen_amount=sharpen,
     )
     return Response(content=raw_io.encode_jpeg(preview_u8), media_type="image/jpeg")
@@ -518,6 +523,7 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
         vibrance=req.vibrance,
         star_reduction=req.star_reduction,
         noise_reduction=req.noise_reduction,
+        upscale_factor=req.upscale,
         sharpen_amount=req.sharpen,
     )
 
@@ -563,6 +569,7 @@ def export_workspace(workspace_id: str, req: ExportRequest):
         vibrance=req.vibrance,
         star_reduction=req.star_reduction,
         noise_reduction=req.noise_reduction,
+        upscale_factor=req.upscale,
         sharpen_amount=req.sharpen,
     )
 

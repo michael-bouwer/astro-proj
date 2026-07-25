@@ -70,8 +70,8 @@ export function ExportControls({
   let sizeLabel = "Unknown";
   if (masterDimensions) {
     const crop = transformParams.crop ?? { x: 0, y: 0, width: 1, height: 1 };
-    const width = Math.round(crop.width * masterDimensions.width);
-    const height = Math.round(crop.height * masterDimensions.height);
+    const width = Math.round(crop.width * masterDimensions.width * effectsParams.upscale);
+    const height = Math.round(crop.height * masterDimensions.height * effectsParams.upscale);
     sizeLabel = `${width} × ${height} px · ${simplifyRatio(width, height)}`;
   }
 

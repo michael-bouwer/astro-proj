@@ -142,6 +142,7 @@ export function previewUrl(
     query.set("vibrance", String(effects.vibrance));
     query.set("star_reduction", String(effects.star_reduction));
     query.set("noise_reduction", String(effects.noise_reduction));
+    query.set("upscale", String(effects.upscale));
     query.set("sharpen", String(effects.sharpen));
   }
   return `${API_BASE}/workspaces/${workspaceId}/preview?${query.toString()}`;

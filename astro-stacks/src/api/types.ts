@@ -110,9 +110,11 @@ export type TransformParams = {
 };
 
 // Simple display-space post-processing (brightness/contrast/saturation/
-// vibrance/star reduction/noise reduction/sharpen), applied last -- after
-// stretch and halo-fix. Each field's neutral/no-op value matches the
-// backend's default (pipeline/effects.py).
+// vibrance/star reduction/noise reduction/upscale/sharpen), applied last --
+// after stretch and halo-fix. Each field's neutral/no-op value matches the
+// backend's default (pipeline/effects.py). Order within the pipeline is
+// fixed server-side, not user-configurable -- see EFFECT_ORDER_GROUPS in
+// EffectsControls.tsx for which of these upscale's position actually affects.
 export type EffectsParams = {
   brightness: number; // -1..1, 0 = unchanged
   contrast: number; // -1..1, 0 = unchanged
@@ -120,6 +122,7 @@ export type EffectsParams = {
   vibrance: number; // -1..1, 0 = unchanged
   star_reduction: number; // 0..1, 0 = unchanged
   noise_reduction: number; // 0..1, 0 = unchanged
+  upscale: number; // 1..3, 1 = unchanged (no resize)
   sharpen: number; // 0..1, 0 = unchanged
 };
 
@@ -130,6 +133,7 @@ export const DEFAULT_EFFECTS_PARAMS: EffectsParams = {
   vibrance: 0,
   star_reduction: 0,
   noise_reduction: 0,
+  upscale: 1,
   sharpen: 0,
 };
 

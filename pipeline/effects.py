@@ -133,6 +133,22 @@ def sharpen(img, amount):
     return _from_float01(np.clip(sharpened, 0.0, 1.0), max_val, dtype)
 
 
+def upscale(img, factor):
+    """factor >= 1.0; 1.0 (or falsy) is a no-op. Plain Lanczos resampling to
+    more pixels -- geometric resize, not detail synthesis, so it tends to
+    read slightly *softer* than the source at the new pixel count. Runs
+    before sharpen in apply() specifically so sharpen can counteract that
+    softening; run after star/noise reduction since those are tuned (fixed
+    kernel/erosion sizes) to native pixel scale and would need re-tuning to
+    mean the same thing on an already-upscaled image.
+    """
+    if not factor or factor <= 1.0:
+        return img
+    height, width = img.shape[:2]
+    new_size = (round(width * factor), round(height * factor))
+    return cv2.resize(img, new_size, interpolation=cv2.INTER_LANCZOS4)
+
+
 def apply(
     img,
     brightness=0.0,
@@ -141,6 +157,7 @@ def apply(
     vibrance=0.0,
     star_reduction=0.0,
     noise_reduction=0.0,
+    upscale_factor=1.0,
     sharpen_amount=0.0,
 ):
     result = adjust_brightness(img, brightness)
@@ -151,11 +168,14 @@ def apply(
     if star_reduction or noise_reduction:
         # Computed once, on the already tone/color-adjusted image, and shared
         # by both -- star_mask's own cost (a percentile over the whole frame)
-        # isn't worth paying twice.
+        # isn't worth paying twice. Deliberately before upscale (see
+        # upscale()'s docstring): star/noise reduction's kernel sizes are
+        # tuned to native pixel scale.
         normalized_for_mask, _, _ = _to_float01(result)
         mask = color.star_mask(normalized_for_mask)
         result = reduce_stars(result, star_reduction, star_mask=mask)
         result = reduce_noise(result, noise_reduction, star_mask=mask)
 
+    result = upscale(result, upscale_factor)
     result = sharpen(result, sharpen_amount)
     return result

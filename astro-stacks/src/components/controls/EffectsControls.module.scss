@@ -10,3 +10,42 @@
   flex-direction: column;
   gap: 6px;
 }
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+
+  & + & {
+    border-top: 1px solid var(--chakra-colors-border);
+    padding-top: 14px;
+  }
+}
+
+.groupHeader {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--chakra-colors-fg);
+}
+
+.groupNote {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--chakra-colors-fg-muted);
+  margin-top: -6px;
+}
+
+.upscaleNote {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--chakra-colors-fg-muted);
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

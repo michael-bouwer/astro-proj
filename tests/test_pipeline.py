@@ -787,6 +787,29 @@ def test_sharpen_visibly_changes_a_soft_edge():
     assert sharpened.shape == img.shape and sharpened.dtype == img.dtype
 
 
+def test_upscale_factor_one_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.upscale(img, 1.0) is img
+
+
+def test_upscale_factor_below_one_is_a_noop():
+    img = np.full((20, 20, 3), 100, dtype=np.uint8)
+    assert effects.upscale(img, 0.5) is img
+
+
+def test_upscale_scales_pixel_dimensions():
+    img = np.full((20, 30, 3), 100, dtype=np.uint8)
+    result = effects.upscale(img, 2.0)
+    assert result.shape == (40, 60, 3)
+    assert result.dtype == img.dtype
+
+
+def test_upscale_rounds_fractional_dimensions():
+    img = np.full((21, 33, 3), 100, dtype=np.uint8)
+    result = effects.upscale(img, 1.5)
+    assert result.shape == (round(21 * 1.5), round(33 * 1.5), 3)
+
+
 def test_effects_apply_defaults_are_a_full_noop():
     img = np.full((20, 20, 3), 100, dtype=np.uint16)
     assert effects.apply(img) is img
@@ -817,3 +840,29 @@ def test_effects_apply_with_every_new_param_together():
         sharpen_amount=0.3,
     )
     assert result.shape == img.shape and result.dtype == img.dtype
+
+
+def test_effects_apply_upscale_factor_scales_final_output_dimensions():
+    rng = _rng()
+    img = stretch.to_uint8(make_light_frame(rng).astype(np.float32))
+    result = effects.apply(img, upscale_factor=2.0)
+    assert result.shape == (img.shape[0] * 2, img.shape[1] * 2, 3)
+    assert result.dtype == img.dtype
+
+
+def test_effects_apply_with_upscale_and_every_other_param_together():
+    rng = _rng()
+    img = stretch.to_uint8(make_light_frame(rng).astype(np.float32))
+    result = effects.apply(
+        img,
+        brightness=0.05,
+        contrast=0.05,
+        saturation=1.1,
+        vibrance=0.4,
+        star_reduction=0.5,
+        noise_reduction=0.5,
+        upscale_factor=1.5,
+        sharpen_amount=0.3,
+    )
+    assert result.shape == (round(img.shape[0] * 1.5), round(img.shape[1] * 1.5), 3)
+    assert result.dtype == img.dtype

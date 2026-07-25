@@ -6,7 +6,20 @@
   overflow: hidden;
 }
 
+.modeBar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px 0;
+  flex-shrink: 0;
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+}
+
 .canvas {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -14,6 +27,55 @@
   justify-content: center;
   background: var(--chakra-colors-bg);
   padding: 16px;
+}
+
+.statusBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.statusBadgeError {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  background: rgba(180, 40, 30, 0.85);
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 // Shrink-wraps to the <img>'s actual rendered box (not the whole canvas), so
@@ -54,6 +116,81 @@
 
 .rotating .image {
   box-shadow: none;
+}
+
+// Before/After/Compare stacks two <img> layers (before as base, after
+// clipped on top via clip-path) inside this same box instead of the single
+// flowed <img> the plain/crop-editing views use -- overflow/border-radius/
+// shadow move here since the layers themselves are absolutely positioned and
+// can't establish the wrap's size or carry their own shadow without doubling
+// it up where they overlap.
+.layered {
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--chakra-colors-border);
+}
+
+.layerImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.compareDivider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: white;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 8px rgba(0, 0, 0, 0.5);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.compareSlider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+
+  &::-webkit-slider-runnable-track {
+    background: transparent;
+    height: 100%;
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--chakra-colors-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    cursor: ew-resize;
+  }
+
+  &::-moz-range-track {
+    background: transparent;
+    height: 100%;
+  }
+
+  &::-moz-range-thumb {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--chakra-colors-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    cursor: ew-resize;
+  }
 }
 
 .placeholder {
