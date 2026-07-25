@@ -1,0 +1,55 @@
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--chakra-colors-fg-muted);
+  background: var(--chakra-colors-bg-subtle);
+  border: 1px solid var(--chakra-colors-border);
+  border-radius: 999px;
+  padding: 2px 4px 2px 8px;
+}
+
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  color: var(--chakra-colors-fg-muted);
+  cursor: pointer;
+  line-height: 1;
+
+  &:hover {
+    background: var(--chakra-colors-bg-muted);
+    color: var(--chakra-colors-fg);
+  }
+}
+
+.addTag {
+  font-size: 0.7rem;
+  color: var(--chakra-colors-fg-muted);
+  background: var(--chakra-colors-bg-subtle);
+  border: 1px dashed var(--chakra-colors-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--chakra-colors-brand-solid);
+    color: var(--chakra-colors-fg);
+  }
+}
+
+.input {
+  width: 120px;
+  flex-shrink: 0;
+}

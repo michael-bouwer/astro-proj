@@ -56,6 +56,10 @@ def _version_dir(workspace_id, version_id):
     return os.path.join(_versions_dir(workspace_id), version_id)
 
 
+def _category_registry_path():
+    return os.path.join(WORKSPACES_ROOT, "categories.json")
+
+
 def _read_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -109,7 +113,7 @@ def create_workspace(name, source_path):
         "created_at": _now(),
         "updated_at": _now(),
         "favourite": False,
-        "category": None,
+        "categories": [],
         "sort_order": _next_sort_order(),
     }
     _write_json(_workspace_json_path(workspace_id), workspace)
@@ -124,8 +128,13 @@ def _load_workspace_raw(workspace_id):
     # Backfills workspaces created before favourite/category/sort_order
     # existed -- no migration script, just sensible defaults on read.
     workspace.setdefault("favourite", False)
-    workspace.setdefault("category", None)
     workspace.setdefault("sort_order", 0)
+    if "categories" not in workspace:
+        # Migrates the old single `category: str | None` field (pre-
+        # multi-category) into the new list -- dropped from the dict here so
+        # the next write of this workspace stops persisting it.
+        legacy_category = workspace.pop("category", None)
+        workspace["categories"] = [legacy_category] if legacy_category else []
     return workspace
 
 
@@ -153,15 +162,70 @@ def update_workspace(workspace_id, name=None, source_path=None):
     return workspace
 
 
-def set_category(workspace_id, category):
-    """category="" clears it (stored as None). Deliberately doesn't bump
-    updated_at -- categorizing/favouriting is list-organization bookkeeping,
-    not a change to the workspace's actual content, and "Date modified"
-    sorting should reflect the latter (renames, pipeline runs) only.
+def _load_category_registry():
+    """name -> ISO timestamp it was last assigned to any workspace. Tracked
+    separately from any one workspace's own categories list -- it's the
+    source for "existing categories, in order of last used" in the
+    add-category UI, which needs to span every workspace, not just one.
+    """
+    path = _category_registry_path()
+    if not os.path.isfile(path):
+        return {}
+    return _read_json(path)
+
+
+def _touch_categories(names):
+    if not names:
+        return
+    registry = _load_category_registry()
+    now = _now()
+    for name in names:
+        registry[name] = now
+    os.makedirs(WORKSPACES_ROOT, exist_ok=True)
+    _write_json(_category_registry_path(), registry)
+
+
+def list_categories():
+    """Every category currently assigned to at least one workspace, most
+    recently used first (ties broken alphabetically). Categories no longer
+    assigned to anything drop out of suggestions rather than accumulating
+    forever, even though the registry itself keeps their history.
+    """
+    registry = _load_category_registry()
+    in_use = set()
+    if os.path.isdir(WORKSPACES_ROOT):
+        for workspace_id in os.listdir(WORKSPACES_ROOT):
+            if os.path.isfile(_workspace_json_path(workspace_id)):
+                # _load_workspace_raw (not a raw _read_json) so a workspace
+                # still on the old single `category` field gets migrated to
+                # `categories` in-memory before its tags count as "in use".
+                in_use.update(_load_workspace_raw(workspace_id).get("categories", []))
+
+    names = sorted(in_use, key=str.lower)
+    names.sort(key=lambda name: registry.get(name, ""), reverse=True)  # stable: last-used desc, alphabetical ties
+    return names
+
+
+def set_categories(workspace_id, categories):
+    """categories: any iterable of names -- deduped (case-sensitive) and
+    blanks dropped, order otherwise preserved as given (the UI controls
+    display order via that). Deliberately doesn't bump updated_at --
+    categorizing/favouriting is list-organization bookkeeping, not a change
+    to the workspace's actual content, and "Date modified" sorting should
+    reflect the latter (renames, pipeline runs) only.
     """
     workspace = _load_workspace_raw(workspace_id)
-    workspace["category"] = category or None
+    seen = set()
+    clean = []
+    for name in categories:
+        name = name.strip()
+        if name and name not in seen:
+            seen.add(name)
+            clean.append(name)
+
+    workspace["categories"] = clean
     _write_json(_workspace_json_path(workspace_id), workspace)
+    _touch_categories(clean)
     return workspace
 
 

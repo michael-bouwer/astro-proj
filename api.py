@@ -88,8 +88,8 @@ class UpdateWorkspaceRequest(BaseModel):
     source_path: str | None = None
 
 
-class SetCategoryRequest(BaseModel):
-    category: str  # "" clears it
+class SetCategoriesRequest(BaseModel):
+    categories: list[str]
 
 
 class SetFavouriteRequest(BaseModel):
@@ -278,11 +278,18 @@ def delete_workspace(workspace_id: str):
     return {"status": "deleted"}
 
 
-@app.put("/workspaces/{workspace_id}/category")
-def set_workspace_category(workspace_id: str, req: SetCategoryRequest):
+@app.put("/workspaces/{workspace_id}/categories")
+def set_workspace_categories(workspace_id: str, req: SetCategoriesRequest):
     _workspace_or_404(workspace_id)
-    workspace.set_category(workspace_id, req.category)
+    workspace.set_categories(workspace_id, req.categories)
     return workspace.get_workspace(workspace_id)
+
+
+@app.get("/categories")
+def list_categories():
+    """Every category currently in use across all workspaces, most recently
+    used first -- powers the add-category autocomplete suggestions."""
+    return {"categories": workspace.list_categories()}
 
 
 @app.put("/workspaces/{workspace_id}/favourite")

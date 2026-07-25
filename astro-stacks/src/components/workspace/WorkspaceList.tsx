@@ -3,13 +3,15 @@ import { Button, Heading, IconButton, Input, NativeSelect, Spinner, Text } from 
 import {
   ApiError,
   deleteWorkspace,
+  getCategories,
   listWorkspaces,
   reorderWorkspaces,
-  setWorkspaceCategory,
+  setWorkspaceCategories,
   setWorkspaceFavourite,
 } from "../../api/client";
 import type { Workspace } from "../../api/types";
 import { usePipelineJobs } from "../../state/PipelineJobsContext";
+import { CategoryEditor } from "./CategoryEditor";
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import styles from "./WorkspaceList.module.scss";
@@ -79,7 +81,9 @@ function SortDirectionIcon({ direction }: { direction: SortDirection }) {
 function compareBySortMode(a: Workspace, b: Workspace, sortMode: SortMode): number {
   switch (sortMode) {
     case "category":
-      return (a.category ?? "").localeCompare(b.category ?? "") || a.name.localeCompare(b.name);
+      // Multiple categories are allowed -- the first one (the primary tag,
+      // in whatever order they were added) organizes the sort.
+      return (a.categories[0] ?? "").localeCompare(b.categories[0] ?? "") || a.name.localeCompare(b.name);
     case "created":
       return a.created_at.localeCompare(b.created_at);
     case "modified":
@@ -126,8 +130,7 @@ export function WorkspaceList({
   const [sortDirection, setSortDirection] = useState<SortDirection>(DEFAULT_DIRECTION.none);
   const [page, setPage] = useState(1);
 
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-  const [categoryDraft, setCategoryDraft] = useState("");
+  const [categorySuggestions, setCategorySuggestions] = useState<string[]>([]);
 
   // Drag-to-reorder ("No sort" only) -- see handleCardPointerDown. Deliberately
   // pointer-events-based rather than the native HTML5 Drag and Drop API:
@@ -158,6 +161,15 @@ export function WorkspaceList({
     if (active) refresh();
   }, [active]);
 
+  useEffect(() => {
+    if (!active) return;
+    getCategories()
+      .then((res) => setCategorySuggestions(res.categories))
+      .catch(() => {
+        // best-effort suggestions -- a failed fetch just means an empty list
+      });
+  }, [active]);
+
   // A new search/sort selection can shrink the result set out from under the
   // page you were on -- reset to page 1 rather than showing an empty page.
   useEffect(() => {
@@ -171,7 +183,7 @@ export function WorkspaceList({
     return workspaces.filter(
       (ws) =>
         ws.name.toLowerCase().includes(query) ||
-        (ws.category ?? "").toLowerCase().includes(query) ||
+        ws.categories.some((c) => c.toLowerCase().includes(query)) ||
         ws.source_path.toLowerCase().includes(query),
     );
   }, [workspaces, searchQuery]);
@@ -211,18 +223,13 @@ export function WorkspaceList({
     }
   };
 
-  const startEditingCategory = (ws: Workspace) => {
-    setEditingCategoryId(ws.id);
-    setCategoryDraft(ws.category ?? "");
-  };
-
-  const commitCategory = async (ws: Workspace) => {
-    const category = categoryDraft.trim();
-    setEditingCategoryId(null);
-    if (category === (ws.category ?? "")) return;
-    setWorkspaces((prev) => prev && prev.map((w) => (w.id === ws.id ? { ...w, category: category || null } : w)));
+  const handleSetCategories = async (ws: Workspace, categories: string[]) => {
+    setWorkspaces((prev) => prev && prev.map((w) => (w.id === ws.id ? { ...w, categories } : w)));
     try {
-      await setWorkspaceCategory(ws.id, category);
+      await setWorkspaceCategories(ws.id, categories);
+      getCategories()
+        .then((res) => setCategorySuggestions(res.categories))
+        .catch(() => {});
     } catch {
       refresh();
     }
@@ -458,33 +465,11 @@ export function WorkspaceList({
               <Heading size="md">{ws.name}</Heading>
               <Text className={styles.path}>{ws.source_path}</Text>
 
-              {editingCategoryId === ws.id ? (
-                <Input
-                  size="xs"
-                  className={styles.categoryInput}
-                  autoFocus
-                  value={categoryDraft}
-                  placeholder="e.g. Orion Nebula"
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setCategoryDraft(e.target.value)}
-                  onBlur={() => commitCategory(ws)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    if (e.key === "Escape") setEditingCategoryId(null);
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className={styles.categoryTag}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startEditingCategory(ws);
-                  }}
-                >
-                  {ws.category ?? "+ Add category"}
-                </button>
-              )}
+              <CategoryEditor
+                categories={ws.categories}
+                suggestions={categorySuggestions}
+                onChange={(categories) => handleSetCategories(ws, categories)}
+              />
 
               <div className={styles.stats}>
                 <span>{ws.frame_counts.lights} lights</span>

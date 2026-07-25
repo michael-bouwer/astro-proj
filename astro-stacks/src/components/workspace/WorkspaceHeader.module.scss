@@ -22,26 +22,6 @@
   min-width: 0;
 }
 
-.categoryTag {
-  font-size: 0.7rem;
-  color: var(--chakra-colors-fg-muted);
-  background: var(--chakra-colors-bg-subtle);
-  border: 1px dashed var(--chakra-colors-border);
-  border-radius: 999px;
-  padding: 2px 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-
-  &:hover {
-    border-color: var(--chakra-colors-brand-solid);
-    color: var(--chakra-colors-fg);
-  }
-}
-
-.categoryInput {
-  max-width: 160px;
-}
-
 .path {
   font-size: 0.75rem;
   color: var(--chakra-colors-fg-muted);

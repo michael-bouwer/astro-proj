@@ -3,11 +3,12 @@ import { Text } from "@chakra-ui/react";
 import {
   ApiError,
   deleteWorkspace,
+  getCategories,
   getWorkspace,
   getWorkspaceSettings,
   loadMaster,
   saveWorkspaceSettings,
-  setWorkspaceCategory,
+  setWorkspaceCategories,
   setWorkspaceFavourite,
 } from "../../api/client";
 import {
@@ -88,6 +89,7 @@ export function WorkspaceDetail({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [frameQualityOpen, setFrameQualityOpen] = useState(false);
+  const [categorySuggestions, setCategorySuggestions] = useState<string[]>([]);
 
   // Gates the auto-save effect below until the initial settings fetch has
   // resolved -- otherwise the still-default state this component mounts with
@@ -105,6 +107,17 @@ export function WorkspaceDetail({
 
   useEffect(() => {
     refreshWorkspace();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  // Refreshed on open (not just once at mount) so a category added from
+  // another workspace's header meanwhile still shows up here as a suggestion.
+  useEffect(() => {
+    getCategories()
+      .then((res) => setCategorySuggestions(res.categories))
+      .catch(() => {
+        // best-effort suggestions -- a failed fetch just means an empty list
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
@@ -220,11 +233,14 @@ export function WorkspaceDetail({
     }
   };
 
-  const handleSetCategory = async (category: string) => {
+  const handleSetCategories = async (categories: string[]) => {
     if (!workspace) return;
-    setWorkspace({ ...workspace, category: category || null });
+    setWorkspace({ ...workspace, categories });
     try {
-      await setWorkspaceCategory(workspaceId, category);
+      await setWorkspaceCategories(workspaceId, categories);
+      getCategories()
+        .then((res) => setCategorySuggestions(res.categories))
+        .catch(() => {});
     } catch {
       refreshWorkspace();
     }
@@ -270,6 +286,7 @@ export function WorkspaceDetail({
     <div className={styles.container}>
       <WorkspaceHeader
         workspace={workspace}
+        categorySuggestions={categorySuggestions}
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenFrameQuality={() => setFrameQualityOpen(true)}
         onSaveVersion={() => setSaveOpen(true)}
@@ -277,7 +294,7 @@ export function WorkspaceDetail({
         onEdit={() => setEditOpen(true)}
         onDelete={() => setDeleteConfirmOpen(true)}
         onToggleFavourite={handleToggleFavourite}
-        onSetCategory={handleSetCategory}
+        onSetCategories={handleSetCategories}
       />
 
       <div className={styles.body}>

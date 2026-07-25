@@ -100,7 +100,7 @@ def test_get_workspace_unknown_id_raises_keyerror(isolated_workspaces_root):
 def test_create_workspace_defaults_favourite_category_and_sort_order(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
     assert created["favourite"] is False
-    assert created["category"] is None
+    assert created["categories"] == []
     assert created["sort_order"] == 0
 
 
@@ -119,33 +119,109 @@ def test_get_workspace_backfills_defaults_for_legacy_workspace_json(synthetic_da
 
     fetched = workspace.get_workspace(created["id"])
     assert fetched["favourite"] is False
-    assert fetched["category"] is None
+    assert fetched["categories"] == []
     assert fetched["sort_order"] == 0
 
 
-def test_set_category_updates_and_persists(synthetic_dataset, isolated_workspaces_root):
+def test_get_workspace_migrates_legacy_single_category_field(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Legacy", str(synthetic_dataset))
+    # Simulates a workspace.json written before multi-category support -- the
+    # old single `category: str | None` field.
+    legacy = {
+        "id": created["id"],
+        "name": "Legacy",
+        "source_path": str(synthetic_dataset),
+        "created_at": "x",
+        "updated_at": "x",
+        "favourite": False,
+        "category": "Orion Nebula",
+        "sort_order": 0,
+    }
+    workspace._write_json(workspace._workspace_json_path(created["id"]), legacy)
+
+    fetched = workspace.get_workspace(created["id"])
+    assert fetched["categories"] == ["Orion Nebula"]
+    assert "category" not in fetched
+
+
+def test_set_categories_updates_and_persists(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
-    workspace.set_category(created["id"], "Orion Nebula")
-    assert workspace.get_workspace(created["id"])["category"] == "Orion Nebula"
+    workspace.set_categories(created["id"], ["Orion Nebula", "Widefield"])
+    assert workspace.get_workspace(created["id"])["categories"] == ["Orion Nebula", "Widefield"]
 
 
-def test_set_category_empty_string_clears_it(synthetic_dataset, isolated_workspaces_root):
+def test_set_categories_dedupes_and_drops_blanks(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
-    workspace.set_category(created["id"], "Orion Nebula")
-    workspace.set_category(created["id"], "")
-    assert workspace.get_workspace(created["id"])["category"] is None
+    workspace.set_categories(created["id"], ["Orion Nebula", " ", "Orion Nebula", "Widefield", ""])
+    assert workspace.get_workspace(created["id"])["categories"] == ["Orion Nebula", "Widefield"]
 
 
-def test_set_category_does_not_bump_updated_at(synthetic_dataset, isolated_workspaces_root):
+def test_set_categories_empty_list_clears_it(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Test", str(synthetic_dataset))
+    workspace.set_categories(created["id"], ["Orion Nebula"])
+    workspace.set_categories(created["id"], [])
+    assert workspace.get_workspace(created["id"])["categories"] == []
+
+
+def test_set_categories_does_not_bump_updated_at(synthetic_dataset, isolated_workspaces_root):
     created = workspace.create_workspace("Test", str(synthetic_dataset))
     before = workspace.get_workspace(created["id"])["updated_at"]
-    workspace.set_category(created["id"], "Orion Nebula")
+    workspace.set_categories(created["id"], ["Orion Nebula"])
     assert workspace.get_workspace(created["id"])["updated_at"] == before
 
 
-def test_set_category_unknown_id_raises_keyerror(isolated_workspaces_root):
+def test_set_categories_unknown_id_raises_keyerror(isolated_workspaces_root):
     with pytest.raises(KeyError):
-        workspace.set_category("does-not-exist", "Orion Nebula")
+        workspace.set_categories("does-not-exist", ["Orion Nebula"])
+
+
+def test_list_categories_returns_only_categories_in_use(synthetic_dataset, isolated_workspaces_root):
+    first = workspace.create_workspace("First", str(synthetic_dataset))
+    second = workspace.create_workspace("Second", str(synthetic_dataset))
+    workspace.set_categories(first["id"], ["Orion Nebula"])
+    workspace.set_categories(second["id"], ["Widefield"])
+
+    assert set(workspace.list_categories()) == {"Orion Nebula", "Widefield"}
+
+
+def test_list_categories_orders_by_most_recently_used(synthetic_dataset, isolated_workspaces_root):
+    first = workspace.create_workspace("First", str(synthetic_dataset))
+    second = workspace.create_workspace("Second", str(synthetic_dataset))
+    workspace.set_categories(first["id"], ["Orion Nebula"])
+    workspace.set_categories(second["id"], ["Widefield"])  # touched after -- more recent
+
+    assert workspace.list_categories() == ["Widefield", "Orion Nebula"]
+
+
+def test_list_categories_excludes_categories_no_longer_assigned(synthetic_dataset, isolated_workspaces_root):
+    ws = workspace.create_workspace("Test", str(synthetic_dataset))
+    workspace.set_categories(ws["id"], ["Orion Nebula"])
+    workspace.set_categories(ws["id"], ["Widefield"])  # drops Orion Nebula
+
+    assert workspace.list_categories() == ["Widefield"]
+
+
+def test_list_categories_empty_when_none_used(isolated_workspaces_root):
+    assert workspace.list_categories() == []
+
+
+def test_list_categories_includes_migrated_legacy_category(synthetic_dataset, isolated_workspaces_root):
+    created = workspace.create_workspace("Legacy", str(synthetic_dataset))
+    # A workspace.json still on disk in the old single-category shape --
+    # list_categories must migrate it (not just get_workspace) to see it as in use.
+    legacy = {
+        "id": created["id"],
+        "name": "Legacy",
+        "source_path": str(synthetic_dataset),
+        "created_at": "x",
+        "updated_at": "x",
+        "favourite": False,
+        "category": "Orion Nebula",
+        "sort_order": 0,
+    }
+    workspace._write_json(workspace._workspace_json_path(created["id"]), legacy)
+
+    assert workspace.list_categories() == ["Orion Nebula"]
 
 
 def test_set_favourite_updates_and_persists(synthetic_dataset, isolated_workspaces_root):

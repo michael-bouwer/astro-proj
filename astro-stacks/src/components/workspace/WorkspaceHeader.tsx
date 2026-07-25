@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Button, Heading, IconButton, Input, Text } from "@chakra-ui/react";
+import { Button, Heading, IconButton, Text } from "@chakra-ui/react";
 import type { Workspace } from "../../api/types";
+import { CategoryEditor } from "./CategoryEditor";
 import styles from "./WorkspaceHeader.module.scss";
 
 function StarIcon({ filled }: { filled: boolean }) {
@@ -13,6 +13,7 @@ function StarIcon({ filled }: { filled: boolean }) {
 
 export function WorkspaceHeader({
   workspace,
+  categorySuggestions,
   onOpenHistory,
   onOpenFrameQuality,
   onSaveVersion,
@@ -20,9 +21,10 @@ export function WorkspaceHeader({
   onEdit,
   onDelete,
   onToggleFavourite,
-  onSetCategory,
+  onSetCategories,
 }: {
   workspace: Workspace;
+  categorySuggestions: string[];
   onOpenHistory: () => void;
   onOpenFrameQuality: () => void;
   onSaveVersion: () => void;
@@ -30,25 +32,8 @@ export function WorkspaceHeader({
   onEdit: () => void;
   onDelete: () => void;
   onToggleFavourite: () => void;
-  onSetCategory: (category: string) => void;
+  onSetCategories: (categories: string[]) => void;
 }) {
-  // Local editing state (draft text + edit-mode toggle) so this mirrors the
-  // same inline-edit UX as the workspace list's category tag -- favouriting/
-  // categorizing shouldn't require leaving the workspace to go back to the list.
-  const [editingCategory, setEditingCategory] = useState(false);
-  const [categoryDraft, setCategoryDraft] = useState(workspace.category ?? "");
-
-  const startEditingCategory = () => {
-    setCategoryDraft(workspace.category ?? "");
-    setEditingCategory(true);
-  };
-
-  const commitCategory = () => {
-    setEditingCategory(false);
-    const trimmed = categoryDraft.trim();
-    if (trimmed !== (workspace.category ?? "")) onSetCategory(trimmed);
-  };
-
   return (
     <div className={styles.header}>
       <div className={styles.titleGroup}>
@@ -63,25 +48,7 @@ export function WorkspaceHeader({
             <StarIcon filled={workspace.favourite} />
           </IconButton>
           <Heading size="md">{workspace.name}</Heading>
-          {editingCategory ? (
-            <Input
-              size="xs"
-              className={styles.categoryInput}
-              autoFocus
-              value={categoryDraft}
-              placeholder="e.g. Orion Nebula"
-              onChange={(e) => setCategoryDraft(e.target.value)}
-              onBlur={commitCategory}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                if (e.key === "Escape") setEditingCategory(false);
-              }}
-            />
-          ) : (
-            <button type="button" className={styles.categoryTag} onClick={startEditingCategory}>
-              {workspace.category ?? "+ Add category"}
-            </button>
-          )}
+          <CategoryEditor categories={workspace.categories} suggestions={categorySuggestions} onChange={onSetCategories} />
         </div>
         <Text className={styles.path}>{workspace.source_path}</Text>
       </div>
