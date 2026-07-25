@@ -3,7 +3,8 @@
   "terminal.integrated.defaultProfile.windows": "PowerShell",
   "terminal.integrated.profiles.windows": {
     "PowerShell": {
-      "source": "PowerShell"
+      "source": "PowerShell",
+      "args": ["-NoExit", "-Command", "cd astro-stacks"]
     },
     "Backend (venv)": {
       "path": "powershell.exe",

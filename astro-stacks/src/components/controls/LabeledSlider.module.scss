@@ -6,6 +6,13 @@
   margin-bottom: 6px;
 }
 
+.labelGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .label {
   font-size: 0.78rem;
   color: var(--chakra-colors-fg-muted);

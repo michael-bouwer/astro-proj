@@ -9,7 +9,9 @@ import {
   rotatedCanvasSize,
   simplifyRatio,
 } from "../../utils/imageGeometry";
+import { FieldLabel } from "./FieldLabel";
 import { LabeledSlider } from "./LabeledSlider";
+import { TabDescription } from "./TabDescription";
 import styles from "./CropRotateControls.module.scss";
 
 const ASPECT_PRESETS: { label: string; aspect: number | null }[] = [
@@ -72,12 +74,22 @@ export function CropRotateControls({
       : null;
     return (
       <div className={styles.section}>
+        <TabDescription>
+          Non-destructive rotate + crop applied on top of the stacked master before stretching. The underlying
+          master_linear file is never modified -- change or reset this at any time without losing anything.
+        </TabDescription>
         <div className={styles.field}>
-          <Text className={styles.label}>Rotation</Text>
+          <FieldLabel
+            label="Rotation"
+            tooltip="Rotates the master before cropping/stretching. The canvas expands to fit the rotated frame (no corners are clipped) -- set via Edit Crop below."
+          />
           <Text className={styles.infoText}>{transformParams.rotationDeg.toFixed(1)}°</Text>
         </div>
         <div className={styles.field}>
-          <Text className={styles.label}>Crop</Text>
+          <FieldLabel
+            label="Crop"
+            tooltip="Crops the (rotated) frame to a sub-region before stretching -- pixels outside the crop are excluded from the preview, saved versions, and export, but remain in the underlying master."
+          />
           <Text className={styles.infoText}>
             {transformParams.crop && committedDimensions
               ? (() => {
@@ -107,20 +119,30 @@ export function CropRotateControls({
 
   return (
     <div className={styles.section}>
+      <TabDescription>
+        Non-destructive rotate + crop applied on top of the stacked master before stretching. The underlying
+        master_linear file is never modified -- change or reset this at any time without losing anything.
+      </TabDescription>
+
       <div className={styles.field}>
         <LabeledSlider
           label="Rotation"
+          tooltip="Rotates the master before cropping. The canvas expands to fit the rotated frame (no corners clipped), matching what Apply Cropping will actually produce."
           value={pendingTransform.rotationDeg}
           min={-180}
           max={180}
           step={0.1}
           precision={1}
           onChange={(rotationDeg) => onPendingChange({ ...pendingTransform, rotationDeg })}
+          debounceMs={0}
         />
       </div>
 
       <div className={styles.field}>
-        <Text className={styles.label}>Aspect ratio</Text>
+        <FieldLabel
+          label="Aspect ratio"
+          tooltip="Constrains the crop box to a fixed width:height ratio, recentered on the current crop. Choose Free to drag corners without a fixed ratio."
+        />
         <div className={styles.presetRow}>
           {ASPECT_PRESETS.map((preset) => {
             const isActive =
@@ -165,7 +187,10 @@ export function CropRotateControls({
       </div>
 
       <div className={styles.field}>
-        <Text className={styles.label}>Common resolutions</Text>
+        <FieldLabel
+          label="Common resolutions"
+          tooltip="Sets the crop to an exact pixel size (e.g. for a specific display or print target), centered on the current crop. Only enabled for resolutions the source frame is actually large enough to produce."
+        />
         <div className={styles.presetRow}>
           {RESOLUTION_PRESETS.map((preset) => {
             const bigEnough =

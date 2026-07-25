@@ -13,6 +13,9 @@ import type {
 } from "../../api/types";
 import { simplifyRatio } from "../../utils/imageGeometry";
 import { buildDefaultExportFilename } from "../../utils/exportFilename";
+import { FieldLabel } from "./FieldLabel";
+import { InfoTooltip } from "./InfoTooltip";
+import { TabDescription } from "./TabDescription";
 import styles from "./ExportControls.module.scss";
 
 const isTauri = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
@@ -125,8 +128,14 @@ export function ExportControls({
 
   return (
     <div className={styles.section}>
+      <TabDescription>
+        Renders the current Stretch/Effects/Crop settings to a full-resolution file on disk -- independent of Save
+        Version (which stores a version inside the app's own workspace folder), this writes directly to the
+        destination you choose below.
+      </TabDescription>
+
       <div className={styles.field}>
-        <Text className={styles.label}>Export size</Text>
+        <FieldLabel label="Export size" tooltip="The pixel dimensions the exported file will have, after the current crop and rotation are applied." />
         <Text className={styles.infoText}>{sizeLabel}</Text>
         <Text className={styles.hint}>
           Matches the preview -- current stretch, crop, and rotation, exactly as shown.
@@ -134,7 +143,10 @@ export function ExportControls({
       </div>
 
       <div className={styles.field}>
-        <Text className={styles.label}>Format</Text>
+        <FieldLabel
+          label="Format"
+          tooltip="TIFF/PNG (16-bit): full precision, larger files, best for further editing. JPEG (8-bit): smaller, lossy, fine for sharing but loses some tonal precision."
+        />
         <div className={styles.segmented}>
           {FORMATS.map((f) => (
             <Button
@@ -150,14 +162,17 @@ export function ExportControls({
         </div>
       </div>
 
-      <Checkbox.Root checked={fixHalos} onCheckedChange={(details) => setFixHalos(details.checked === true)}>
-        <Checkbox.HiddenInput />
-        <Checkbox.Control />
-        <Checkbox.Label>Fix star halos</Checkbox.Label>
-      </Checkbox.Root>
+      <div className={styles.checkboxRow}>
+        <Checkbox.Root checked={fixHalos} onCheckedChange={(details) => setFixHalos(details.checked === true)}>
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Fix star halos</Checkbox.Label>
+        </Checkbox.Root>
+        <InfoTooltip label="Softens the hard-edged bright halo that can appear around saturated stars after stretching, by feathering a blend at the star's edge. Applied before the Effects tab's adjustments." />
+      </div>
 
       <div className={styles.field}>
-        <Text className={styles.label}>File name</Text>
+        <FieldLabel label="File name" tooltip="The exported file's base name (without extension) -- the extension is added automatically based on the Format selected above." />
         <div className={styles.pathRow}>
           <Input className={styles.pathInput} value={filename} onChange={(e) => setFilename(e.target.value)} />
           <Text className={styles.extension}>.{extension}</Text>
@@ -169,7 +184,7 @@ export function ExportControls({
 
       {!isTauri && (
         <div className={styles.field}>
-          <Text className={styles.label}>Destination folder</Text>
+          <FieldLabel label="Destination folder" tooltip="The folder the exported file is written into, combined with the file name and format above." />
           <Input
             value={destinationFolder}
             onChange={(e) => setDestinationFolder(e.target.value)}

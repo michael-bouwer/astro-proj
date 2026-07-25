@@ -10,6 +10,14 @@
   min-height: 0;
   display: grid;
   grid-template-columns: 260px 1fr 320px;
+  // Without an explicit row track, the single implicit row is sized "auto"
+  // and can grow to fit whichever column's content is tallest (e.g. a long
+  // frame list, or a tall Stacking-tab progress readout) instead of being
+  // capped to .body's own (already-bounded) height -- pushing PreviewPanel's
+  // StatBar past the bottom of the row with no way to scroll to it. Capping
+  // the row to the container's height lets each column manage its own
+  // overflow (scrolling internally) instead of stretching the row.
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .status {

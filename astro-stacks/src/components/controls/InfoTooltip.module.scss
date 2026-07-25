@@ -1,0 +1,27 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--chakra-colors-border);
+  color: var(--chakra-colors-fg-muted);
+  font-size: 0.62rem;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--chakra-colors-fg);
+    border-color: var(--chakra-colors-fg-muted);
+  }
+}
+
+.content {
+  max-width: 240px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}

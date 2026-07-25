@@ -30,6 +30,13 @@
   align-items: center;
 }
 
+.labelGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .sliderValue {
   font-size: 0.8rem;
   font-weight: 600;
@@ -39,6 +46,12 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .runButton {
