@@ -4,6 +4,7 @@ import { TabBar, type OpenTab } from "./components/layout/TabBar";
 import { WorkspaceList } from "./components/workspace/WorkspaceList";
 import { WorkspaceDetail } from "./components/workspace/WorkspaceDetail";
 import { PipelineJobsProvider } from "./state/PipelineJobsContext";
+import { unloadMaster } from "./api/client";
 import type { Workspace } from "./api/types";
 import styles from "./App.module.scss";
 
@@ -34,6 +35,11 @@ function App() {
 
       return next;
     });
+    // Fire-and-forget: frees the cached master promptly instead of leaving it
+    // to the LRU cap to evict once *other* workspaces happen to push it out.
+    // Failures (e.g. the workspace was already deleted) don't matter here --
+    // there's nothing for the UI to react to either way.
+    unloadMaster(workspaceId).catch(() => {});
   };
 
   const renameTab = (workspace: Workspace) => {

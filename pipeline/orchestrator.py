@@ -9,12 +9,14 @@ import os
 from . import calibration, color, raw_io
 from .alignment import ReferenceFrame
 from .stacking import (
+    check_temp_space,
     cleanup_memmap,
     compute_frame_weights,
     create_coverage_stack,
     create_memmap_stack,
     median_combine,
     sigma_clip_combine,
+    stack_bytes_required,
     winsorized_sigma_clip_combine,
 )
 
@@ -173,6 +175,13 @@ def run_pipeline(
     progress_cb("reference", 0, "Loading reference frame...")
     reference = ReferenceFrame(calibrate(raw_io.load_frame(light_files[reference_index])))
     height, width = reference.height, reference.width
+
+    # Checked before allocating anything, and before the expensive
+    # decode/align loop below -- running out of scratch space two thirds of the
+    # way through a long session is a miserable way to find out. The reference
+    # frame has to be decoded first only because that's what establishes the
+    # frame dimensions this estimate needs.
+    check_temp_space(stack_bytes_required(len(light_files), height, width, 3))
 
     mem_stack, temp_filepath = create_memmap_stack(len(light_files), height, width, 3)
     coverage_stack, coverage_temp_filepath = create_coverage_stack(len(light_files), height, width)

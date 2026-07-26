@@ -1,10 +1,19 @@
+import os
 import numpy as np
 import pytest
 
+from pipeline import stacking
 from pipeline.stacking import (
+    COMBINE_MEMORY_BUDGET_BYTES,
+    MAX_CHUNK_ROWS,
+    STACK_TEMP_DIR_ENV,
+    _auto_chunk_rows,
+    check_temp_space,
     compute_frame_weights,
     median_combine,
     sigma_clip_combine,
+    stack_bytes_required,
+    stack_temp_dir,
     winsorized_sigma_clip_combine,
 )
 
@@ -163,3 +172,111 @@ def test_median_combine_excludes_invalid_coverage_from_median():
     valid = _coverage([True, True, True, False])
     result = median_combine(mem_stack, 4, valid_mask_stack=valid)
     assert result[0, 0, 0] == 20.0  # median of [10, 20, 30], not [10, 20, 30, 0]
+
+
+# --- adaptive chunk sizing -------------------------------------------------
+
+
+def test_auto_chunk_rows_shrinks_as_frame_count_grows():
+    """The whole point: peak memory used to scale with frame count because
+    chunk_rows was fixed. More frames must now mean proportionally fewer rows."""
+    wide = 3908
+    rows = [_auto_chunk_rows(n, wide, 3) for n in (20, 60, 134, 210)]
+    assert rows == sorted(rows, reverse=True)
+    assert rows[0] > rows[-1]
+
+
+def test_auto_chunk_rows_holds_the_memory_budget_across_frame_counts():
+    wide = 3908
+    for frames in (20, 60, 134, 210, 500):
+        rows = _auto_chunk_rows(frames, wide, 3)
+        projected_peak = rows * frames * wide * 3 * 4 * stacking.CHUNK_MEMORY_OVERHEAD
+        # Only the clamp at MAX_CHUNK_ROWS may undershoot the budget; never overshoot.
+        assert projected_peak <= COMBINE_MEMORY_BUDGET_BYTES or rows == MAX_CHUNK_ROWS
+
+
+def test_auto_chunk_rows_never_returns_less_than_one_row():
+    # A pathologically wide frame with a huge stack still has to make progress.
+    assert _auto_chunk_rows(2000, 20000, 3, budget_bytes=1024) == 1
+
+
+def test_auto_chunk_rows_is_capped_for_small_stacks():
+    assert _auto_chunk_rows(2, 64, 3) == MAX_CHUNK_ROWS
+
+
+@pytest.mark.parametrize(
+    "combine",
+    [
+        lambda stack, n, rows: sigma_clip_combine(stack, n, sigma=2.0, chunk_rows=rows),
+        lambda stack, n, rows: winsorized_sigma_clip_combine(stack, n, sigma=2.0, chunk_rows=rows),
+        lambda stack, n, rows: median_combine(stack, n, chunk_rows=rows),
+    ],
+    ids=["sigma_clip", "winsorized", "median"],
+)
+def test_chunking_does_not_change_the_result(combine):
+    """Chunking only splits the work into row bands; each pixel is still
+    combined across frames only. Auto-sizing chunks therefore has to be
+    bit-identical to any fixed chunk_rows, or it isn't a safe optimisation."""
+    rng = np.random.default_rng(7)
+    mem_stack = (rng.normal(1000, 50, (9, 37, 11, 3))).astype(np.float32)
+    mem_stack[3, 5, 5] = 9e4  # an outlier for the rejection paths to bite on
+
+    baseline = combine(mem_stack, 9, 100)
+    for rows in (1, 7, 37, 1000, None):
+        assert np.array_equal(combine(mem_stack, 9, rows), baseline)
+
+
+# --- scratch space ---------------------------------------------------------
+
+
+def test_stack_bytes_required_counts_pixel_data_and_coverage():
+    # 4 bytes per float32 channel sample, plus 1 byte per pixel of coverage.
+    assert stack_bytes_required(10, 100, 200, 3) == 10 * 100 * 200 * 3 * 4 + 10 * 100 * 200
+
+
+def test_stack_temp_dir_prefers_explicit_then_env_then_system(tmp_path, monkeypatch):
+    monkeypatch.delenv(STACK_TEMP_DIR_ENV, raising=False)
+    system_default = stack_temp_dir()
+    assert system_default  # whatever tempfile.gettempdir() gives
+
+    monkeypatch.setenv(STACK_TEMP_DIR_ENV, str(tmp_path / "from_env"))
+    assert stack_temp_dir() == str(tmp_path / "from_env")
+    # An explicit argument still wins over the environment override.
+    assert stack_temp_dir(str(tmp_path / "explicit")) == str(tmp_path / "explicit")
+
+
+def test_check_temp_space_passes_when_space_is_available(tmp_path):
+    check_temp_space(1024, temp_dir=str(tmp_path))  # must not raise
+
+
+def test_check_temp_space_raises_naming_the_env_var_and_the_shortfall(tmp_path):
+    with pytest.raises(RuntimeError) as excinfo:
+        check_temp_space(500 * 10**12, temp_dir=str(tmp_path))  # 500 TB
+
+    message = str(excinfo.value)
+    assert STACK_TEMP_DIR_ENV in message  # tells the user how to redirect it
+    assert str(tmp_path) in message  # and which directory fell short
+    assert "GB" in message
+
+
+def test_check_temp_space_creates_a_missing_temp_dir(tmp_path):
+    target = tmp_path / "does" / "not" / "exist"
+    check_temp_space(1024, temp_dir=str(target))
+    assert target.is_dir()
+
+
+def test_memmap_stacks_are_created_in_the_env_var_directory(tmp_path, monkeypatch):
+    """The redirect is only useful if the actual scratch files land there --
+    these are the multi-GB ones, so it's the whole point of the override."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setenv(STACK_TEMP_DIR_ENV, str(scratch))
+
+    mem_stack, mem_path = stacking.create_memmap_stack(2, 8, 8, 3)
+    coverage, coverage_path = stacking.create_coverage_stack(2, 8, 8)
+    try:
+        assert os.path.dirname(mem_path) == str(scratch)
+        assert os.path.dirname(coverage_path) == str(scratch)
+    finally:
+        stacking.cleanup_memmap(mem_stack, mem_path)
+        stacking.cleanup_memmap(coverage, coverage_path)

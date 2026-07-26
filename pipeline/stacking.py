@@ -25,14 +25,81 @@ physically remove it from the memmap.
 """
 import gc
 import os
+import shutil
 import tempfile
 import warnings
 
 import numpy as np
 
+# Where the memmap-backed stack files live. A full session is genuinely large
+# (measured: 17.7 GB for 134 frames, 27.8 GB for 210, at 3908x2602), and the
+# system temp dir is usually on the OS drive, which is often the smallest one
+# on a machine with a separate data disk. This lets that be redirected without
+# touching where the workspace itself is stored.
+STACK_TEMP_DIR_ENV = "ASTRO_STACK_TEMP_DIR"
 
-def create_memmap_stack(count, height, width, channels=3):
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
+# Per-chunk RAM budget for the combine functions below. chunk_rows used to be a
+# fixed 100, which meant peak memory scaled linearly with frame count -- fine at
+# 20 frames (~0.4 GB), not at 210 (~3.7-4.1 GB measured). Deriving the row count
+# from a byte budget instead keeps the peak roughly flat regardless of how many
+# subs the session has. Chunking never changes the arithmetic (each pixel is
+# combined only across frames, never across rows), so output is unaffected.
+COMBINE_MEMORY_BUDGET_BYTES = 512 * 1024 * 1024
+
+# Measured peak RSS during a chunk runs ~3.8-4.3x the chunk's own bytes for
+# sigma_clip and ~4.3-4.8x for winsorized (which additionally holds nan_chunk
+# and its clipped copy alongside the temporaries _masked_median needs). 5
+# covers the worst of the two, so the budget above holds for every method
+# rather than only the cheapest one.
+CHUNK_MEMORY_OVERHEAD = 5
+
+# Above this, chunks stop being a useful unit of work and just add per-chunk
+# overhead -- and a small frame count would otherwise ask for absurd row counts.
+MAX_CHUNK_ROWS = 512
+
+
+def stack_temp_dir(temp_dir=None):
+    """Directory for the memmap scratch files: an explicit argument wins, then
+    the ASTRO_STACK_TEMP_DIR override, then the system temp dir."""
+    return temp_dir or os.environ.get(STACK_TEMP_DIR_ENV) or tempfile.gettempdir()
+
+
+def stack_bytes_required(frame_count, height, width, channels=3):
+    """Total scratch footprint create_memmap_stack + create_coverage_stack will
+    occupy for a session of this size -- float32 pixel data plus the 1-byte-per
+    -pixel coverage mask."""
+    pixels = height * width
+    return frame_count * pixels * channels * np.dtype(np.float32).itemsize + frame_count * pixels
+
+
+def check_temp_space(required_bytes, temp_dir=None, headroom=1.1):
+    """Fails fast, with a message naming the fix, when the scratch directory
+    can't hold the stack. Without this a long run dies partway through with
+    whatever opaque error the OS raises on a full disk -- after already having
+    spent the time to decode and align most of the session.
+    """
+    directory = stack_temp_dir(temp_dir)
+    os.makedirs(directory, exist_ok=True)
+
+    free = shutil.disk_usage(directory).free
+    needed = int(required_bytes * headroom)
+    if free < needed:
+        raise RuntimeError(
+            f"Not enough free disk space to stack this session. Needs about "
+            f"{needed / 1e9:.1f} GB of scratch space in '{directory}', but only "
+            f"{free / 1e9:.1f} GB is available. Free up space, or set the "
+            f"{STACK_TEMP_DIR_ENV} environment variable to a folder on a larger drive."
+        )
+
+
+def _auto_chunk_rows(frame_count, width, channels, budget_bytes=COMBINE_MEMORY_BUDGET_BYTES):
+    """Row-band height that keeps a chunk's peak memory near budget_bytes."""
+    bytes_per_row = max(1, frame_count * width * channels * np.dtype(np.float32).itemsize * CHUNK_MEMORY_OVERHEAD)
+    return int(min(MAX_CHUNK_ROWS, max(1, budget_bytes // bytes_per_row)))
+
+
+def create_memmap_stack(count, height, width, channels=3, temp_dir=None):
+    temp_file = tempfile.NamedTemporaryFile(delete=False, dir=stack_temp_dir(temp_dir))
     temp_filepath = temp_file.name
     temp_file.close()
     mem_stack = np.memmap(
@@ -41,7 +108,7 @@ def create_memmap_stack(count, height, width, channels=3):
     return mem_stack, temp_filepath
 
 
-def create_coverage_stack(count, height, width):
+def create_coverage_stack(count, height, width, temp_dir=None):
     """A (count, height, width) boolean memmap paralleling create_memmap_stack's
     pixel data, marking which pixels in each frame are real (aligned) data vs.
     the black border fill introduced by rotating/shifting a frame to match the
@@ -49,7 +116,7 @@ def create_coverage_stack(count, height, width):
     functions below as valid_mask_stack so that border fill never counts
     toward a pixel's average.
     """
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_file = tempfile.NamedTemporaryFile(delete=False, dir=stack_temp_dir(temp_dir))
     temp_filepath = temp_file.name
     temp_file.close()
     coverage_stack = np.memmap(temp_filepath, dtype=bool, mode="w+", shape=(count, height, width))
@@ -174,7 +241,7 @@ def _weighted_average(values, keep, weights):
 
 
 def sigma_clip_combine(
-    mem_stack, frame_count, sigma=3.0, iterations=3, weights=None, chunk_rows=100, progress_cb=None, valid_mask_stack=None
+    mem_stack, frame_count, sigma=3.0, iterations=3, weights=None, chunk_rows=None, progress_cb=None, valid_mask_stack=None
 ):
     """Iterative, median/MAD-based (robust) sigma-clipped weighted average.
 
@@ -189,8 +256,12 @@ def sigma_clip_combine(
     edge pixel never counts toward that pixel's statistics or average --
     without this, a pixel with partial frame coverage gets its value dragged
     toward black in proportion to how many frames don't reach it.
+
+    chunk_rows defaults to whatever keeps a chunk inside COMBINE_MEMORY_BUDGET_BYTES
+    (see _auto_chunk_rows); pass an explicit value to override.
     """
     _, height, width, channels = mem_stack.shape
+    chunk_rows = _auto_chunk_rows(frame_count, width, channels) if chunk_rows is None else chunk_rows
     result = np.zeros((height, width, channels), dtype=np.float32)
     weights = np.ones(frame_count, dtype=np.float32) if weights is None else weights
 
@@ -221,7 +292,7 @@ def sigma_clip_combine(
 
 
 def winsorized_sigma_clip_combine(
-    mem_stack, frame_count, sigma=3.0, winsorize_iterations=3, weights=None, chunk_rows=100, progress_cb=None, valid_mask_stack=None
+    mem_stack, frame_count, sigma=3.0, winsorize_iterations=3, weights=None, chunk_rows=None, progress_cb=None, valid_mask_stack=None
 ):
     """Winsorized Sigma Clipping: winsorizes (caps, doesn't discard) values
     outside the current mean/std over a few passes to get a std estimate
@@ -238,8 +309,12 @@ def winsorized_sigma_clip_combine(
     frame's black border-fill pixels from every statistic computed here
     (median/MAD seed, winsorized mean/std, and the final average), via NaN
     (mean/std already have numpy's fast nan-aware path, unlike median).
+
+    chunk_rows defaults to whatever keeps a chunk inside COMBINE_MEMORY_BUDGET_BYTES
+    (see _auto_chunk_rows); pass an explicit value to override.
     """
     _, height, width, channels = mem_stack.shape
+    chunk_rows = _auto_chunk_rows(frame_count, width, channels) if chunk_rows is None else chunk_rows
     result = np.zeros((height, width, channels), dtype=np.float32)
     weights = np.ones(frame_count, dtype=np.float32) if weights is None else weights
 
@@ -276,7 +351,7 @@ def winsorized_sigma_clip_combine(
     return result
 
 
-def median_combine(mem_stack, frame_count, chunk_rows=100, progress_cb=None, valid_mask_stack=None):
+def median_combine(mem_stack, frame_count, chunk_rows=None, progress_cb=None, valid_mask_stack=None):
     """Plain median combine -- cheaper and still useful for small calibration-frame
     sets. Unlike the two rejection-based combines above, this isn't weighted:
     a weighted median isn't a standard feature of the tools this pipeline is
@@ -284,8 +359,12 @@ def median_combine(mem_stack, frame_count, chunk_rows=100, progress_cb=None, val
 
     valid_mask_stack -- see sigma_clip_combine's docstring -- excludes each
     frame's black border-fill pixels from the median.
+
+    chunk_rows defaults to whatever keeps a chunk inside COMBINE_MEMORY_BUDGET_BYTES
+    (see _auto_chunk_rows); pass an explicit value to override.
     """
     _, height, width, channels = mem_stack.shape
+    chunk_rows = _auto_chunk_rows(frame_count, width, channels) if chunk_rows is None else chunk_rows
     result = np.zeros((height, width, channels), dtype=np.float32)
 
     for y in range(0, height, chunk_rows):

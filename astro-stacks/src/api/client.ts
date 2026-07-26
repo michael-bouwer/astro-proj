@@ -127,6 +127,10 @@ export function loadMaster(workspaceId: string): Promise<{ status: string } & Ma
   return request(`/workspaces/${workspaceId}/load_master`, { method: "POST" });
 }
 
+export function unloadMaster(workspaceId: string): Promise<{ status: string }> {
+  return request(`/workspaces/${workspaceId}/unload_master`, { method: "POST" });
+}
+
 export function previewUrl(
   workspaceId: string,
   params: { method: string; midtone: number; scale: number; target_bkg: number; shadow_clip: number },

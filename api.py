@@ -1,5 +1,6 @@
 import os
 import uuid
+from collections import OrderedDict
 
 import psutil
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -19,7 +20,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-loaded_masters = {}  # workspace_id -> linear float32 BGR ndarray, cached so the stretch controls don't hit disk every tick
+# Byte budget for loaded_masters below. Measured at 122 MB for a real 10 MP
+# master; with no cap this only ever grew (eviction previously only happened
+# on workspace deletion, not on closing a tab), so a session that opened
+# several large workspaces in a row could accumulate gigabytes of masters that
+# were no longer even being viewed.
+LOADED_MASTERS_BUDGET_BYTES = 1.5 * 1024**3
+
+
+class _LRUMasterCache(OrderedDict):
+    """workspace_id -> linear float32 BGR ndarray, cached so the stretch
+    controls don't hit disk every tick. Bounded by LOADED_MASTERS_BUDGET_BYTES:
+    inserting evicts the least-recently-used entries first, and any read moves
+    its entry to the back so it counts as freshly used. The entry just
+    inserted is always kept, even if it alone exceeds the budget -- a single
+    workspace has to stay usable no matter how large its master is.
+    """
+
+    def get_and_touch(self, workspace_id):
+        master = self.get(workspace_id)
+        if master is not None:
+            self.move_to_end(workspace_id)
+        return master
+
+    def __setitem__(self, workspace_id, master):
+        self.pop(workspace_id, None)  # re-inserting must also move it to the end
+        super().__setitem__(workspace_id, master)
+        total = sum(m.nbytes for m in self.values())
+        # len(self) > 1 guard, not "while total > budget": the entry just
+        # inserted is at the end (OrderedDict preserves insertion order), so
+        # popitem(last=False) can only ever evict an older entry -- but
+        # without the guard a single master bigger than the budget would loop
+        # trying to evict itself and leave the cache empty.
+        while total > LOADED_MASTERS_BUDGET_BYTES and len(self) > 1:
+            _evicted_id, evicted = self.popitem(last=False)
+            total -= evicted.nbytes
+
+
+loaded_masters = _LRUMasterCache()
 jobs = {}  # job_id -> {status, stage, percent, overall_percent, message, result, error, workspace_id}
 
 # Relative cost of each pipeline stage (pipeline/orchestrator.py's progress_cb
@@ -451,6 +489,18 @@ def load_workspace_master(workspace_id: str):
     return {"status": "loaded", "width": width, "height": height}
 
 
+@app.post("/workspaces/{workspace_id}/unload_master")
+def unload_workspace_master(workspace_id: str):
+    """Frees this workspace's cached master ahead of the LRU eviction that
+    would otherwise only happen once other workspaces' masters push it out.
+    Called (fire-and-forget) when a workspace's tab is closed -- the master on
+    disk is untouched, so load_master brings it straight back if the tab
+    reopens.
+    """
+    loaded_masters.pop(workspace_id, None)
+    return {"status": "unloaded"}
+
+
 @app.get("/workspaces/{workspace_id}/preview")
 def workspace_preview(
     workspace_id: str,
@@ -475,7 +525,7 @@ def workspace_preview(
     max_dimension: int = PREVIEW_MAX_DIMENSION,
 ):
     _workspace_or_404(workspace_id)
-    master = loaded_masters.get(workspace_id)
+    master = loaded_masters.get_and_touch(workspace_id)
     if master is None:
         raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
 
@@ -526,7 +576,7 @@ def workspace_histogram(
     this on rotation/crop changes, not on every stretch-slider tick.
     """
     _workspace_or_404(workspace_id)
-    master = loaded_masters.get(workspace_id)
+    master = loaded_masters.get_and_touch(workspace_id)
     if master is None:
         raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
 
@@ -557,7 +607,7 @@ def workspace_reference_preview(workspace_id: str):
 @app.post("/workspaces/{workspace_id}/versions")
 def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
     _workspace_or_404(workspace_id)
-    master = loaded_masters.get(workspace_id)
+    master = loaded_masters.get_and_touch(workspace_id)
     if master is None:
         raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
 
@@ -599,7 +649,7 @@ def save_workspace_version(workspace_id: str, req: SaveVersionRequest):
 @app.post("/workspaces/{workspace_id}/export")
 def export_workspace(workspace_id: str, req: ExportRequest):
     _workspace_or_404(workspace_id)
-    master = loaded_masters.get(workspace_id)
+    master = loaded_masters.get_and_touch(workspace_id)
     if master is None:
         raise HTTPException(status_code=400, detail="No master loaded. Call load_master first.")
 

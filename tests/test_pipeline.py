@@ -675,6 +675,34 @@ def test_run_pipeline_warns_on_a_saturated_flat_channel_in_an_8bit_dataset(tmp_p
     assert "B" in result["calibration_warnings"][0]
 
 
+def test_run_pipeline_fails_fast_when_scratch_space_is_short(synthetic_dataset, monkeypatch):
+    """The check has to fire before the decode/align loop -- discovering a full
+    disk two thirds of the way through a long session wastes all that work."""
+    aligned_any = []
+    real_align = orchestrator.ReferenceFrame.align
+
+    def spy_align(self, target_bgr):
+        aligned_any.append(1)
+        return real_align(self, target_bgr)
+
+    monkeypatch.setattr(orchestrator.ReferenceFrame, "align", spy_align)
+    monkeypatch.setattr(
+        orchestrator, "check_temp_space",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Not enough free disk space (simulated)")),
+    )
+
+    with pytest.raises(RuntimeError, match="Not enough free disk space"):
+        orchestrator.run_pipeline(str(synthetic_dataset))
+
+    assert aligned_any == [], "no frames should have been aligned before the space check failed"
+
+
+def test_run_pipeline_still_stacks_when_space_is_available(synthetic_dataset):
+    # Sanity counterpart: the real (unpatched) check must not block a normal run.
+    result = orchestrator.run_pipeline(str(synthetic_dataset))
+    assert result["stacked_frame_count"] >= 2
+
+
 def test_run_pipeline_without_calibration_still_stacks(synthetic_dataset):
     result = orchestrator.run_pipeline(str(synthetic_dataset), apply_dark=False, apply_flat=False)
     assert result["applied_dark"] is False
