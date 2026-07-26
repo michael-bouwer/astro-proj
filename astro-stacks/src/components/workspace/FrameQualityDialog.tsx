@@ -9,6 +9,7 @@ const STATUS_LABEL: Record<FrameQualityStatus, string> = {
   quality_rejected: "Low SNR",
   failed_to_align: "Failed to align",
   manually_excluded: "Excluded",
+  error: "Error",
 };
 
 const STATUS_COLOR: Record<FrameQualityStatus, string> = {
@@ -16,6 +17,9 @@ const STATUS_COLOR: Record<FrameQualityStatus, string> = {
   quality_rejected: "orange",
   failed_to_align: "red",
   manually_excluded: "gray",
+  // Purple rather than red: this is "something went wrong reading this file",
+  // which needs different action than a frame that simply wouldn't register.
+  error: "purple",
 };
 
 export function FrameQualityDialog({
@@ -120,6 +124,11 @@ export function FrameQualityDialog({
                       </Badge>
                       {entry.snr_db !== null && <Text as="span">SNR {entry.snr_db.toFixed(1)} dB</Text>}
                     </div>
+                    {entry.error && (
+                      <Text className={styles.itemError} title={entry.error}>
+                        {entry.error}
+                      </Text>
+                    )}
                   </div>
                 </label>
               ))}

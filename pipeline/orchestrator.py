@@ -29,13 +29,23 @@ INTEGRATION_METHODS = ("sigma_clip", "winsorized_sigma_clip", "median")
 # apply their own frame-quality rejection by default.
 QUALITY_REJECT_SIGMA = 3.0
 
+# Pixel stride for the per-frame SNR used to weight/reject frames (see
+# color.estimate_snr). Every frame's quality must be measured the same way to
+# be comparable, so the reference frame and the aligned frames share this.
+# The SNR reported for the finished master is deliberately measured at full
+# resolution instead -- that one is a headline number, not a relative ranking.
+SNR_SUBSAMPLE = 1
+
 
 def _noop(stage, percent, message):
     pass
 
 
-def _clip_warning(kind, master_frame):
-    clipped = calibration.clipped_channels(master_frame)
+def _clip_warning(kind, master_frame, source_files):
+    """source_files is the set the master was built from -- its first entry
+    tells us the white level to compare against (an 8-bit source saturates at
+    255, not the 16-bit ceiling raw files use). See raw_io.white_level_for."""
+    clipped = calibration.clipped_channels(master_frame, clip_level=raw_io.white_level_for(source_files[0]))
     if not clipped:
         return None
     channels = "/".join(clipped)
@@ -79,19 +89,19 @@ def build_calibration_masters(dataset_dir, output_dir=None, progress_cb=None):
 
     master_bias = build_or_reuse("bias", bias_files, 0)
     if master_bias is not None:
-        warning = _clip_warning("bias", master_bias)
+        warning = _clip_warning("bias", master_bias, bias_files)
         if warning:
             warnings.append(warning)
 
     master_dark = build_or_reuse("dark", dark_files, 33)
     if master_dark is not None:
-        warning = _clip_warning("dark", master_dark)
+        warning = _clip_warning("dark", master_dark, dark_files)
         if warning:
             warnings.append(warning)
 
     master_flat = build_or_reuse("flat", flat_files, 66)
     if master_flat is not None:
-        warning = _clip_warning("flat", master_flat)
+        warning = _clip_warning("flat", master_flat, flat_files)
         if warning:
             warnings.append(warning)
     normalized_flat = calibration.normalize_flat(master_flat, master_bias) if master_flat is not None else None
@@ -173,9 +183,17 @@ def run_pipeline(
     # mem_stack -- feeds compute_frame_weights below so a frame's measured
     # quality controls how much it counts toward the combine. successful_filenames
     # tracks the same frames by name, in the same order, for frame_quality below.
-    qualities = [color.estimate_snr(reference.bgr)]
+    # The reference frame is never warped, so it has no border fill to exclude
+    # -- but it must be measured with the same stride as the aligned frames
+    # below or its quality isn't comparable to theirs.
+    qualities = [color.estimate_snr(reference.bgr, subsample=SNR_SUBSAMPLE)]
     successful_filenames = [os.path.basename(light_files[reference_index])]
-    failed_filenames = []
+    # (basename, status, error) for frames that never made it into the stack.
+    # Registration genuinely failing is a different thing from the frame
+    # blowing up while being read or calibrated (corrupt file, unreadable
+    # disk, ...), and the frame-review UI is a lot more useful when it can say
+    # which happened -- and what the error actually was.
+    failed_frames = []
 
     try:
         remaining = light_files[:reference_index] + light_files[reference_index + 1 :]
@@ -184,16 +202,21 @@ def run_pipeline(
                 frame = calibrate(raw_io.load_frame(path))
                 result = reference.align(frame)
                 if result is None:
-                    failed_filenames.append(os.path.basename(path))
+                    failed_frames.append((os.path.basename(path), "failed_to_align", None))
                     continue
                 aligned, valid_mask = result
                 mem_stack[successful] = aligned
                 coverage_stack[successful] = valid_mask
-                qualities.append(color.estimate_snr(aligned))
+                # valid_mask matters here, not just for the combine: without it
+                # the warped frame's black border fill counts as sky and
+                # inflates the noise estimate, so a frame that merely needed a
+                # larger shift looks lower-quality than it is and gets
+                # under-weighted (or rejected) below. See color.estimate_snr.
+                qualities.append(color.estimate_snr(aligned, coverage=valid_mask, subsample=SNR_SUBSAMPLE))
                 successful_filenames.append(os.path.basename(path))
                 successful += 1
-            except Exception:
-                failed_filenames.append(os.path.basename(path))
+            except Exception as exc:
+                failed_frames.append((os.path.basename(path), "error", f"{type(exc).__name__}: {exc}"))
                 continue
             progress_cb("aligning", (idx / len(remaining)) * 100, f"Aligned frame {idx}/{len(remaining)}")
 
@@ -207,13 +230,16 @@ def run_pipeline(
         # told to skip) -- feeds the frame-review UI. successful_filenames,
         # qualities, and kept are all built/indexed in lockstep above.
         frame_quality = [
-            {"filename": filename, "status": "included" if is_kept else "quality_rejected", "snr_db": quality}
+            {"filename": filename, "status": "included" if is_kept else "quality_rejected", "snr_db": quality, "error": None}
             for filename, quality, is_kept in zip(successful_filenames, qualities, kept.tolist())
         ]
-        frame_quality += [{"filename": filename, "status": "failed_to_align", "snr_db": None} for filename in failed_filenames]
+        frame_quality += [
+            {"filename": filename, "status": status, "snr_db": None, "error": error}
+            for filename, status, error in failed_frames
+        ]
         all_basenames = {os.path.basename(path) for path in all_light_files}
         frame_quality += [
-            {"filename": filename, "status": "manually_excluded", "snr_db": None}
+            {"filename": filename, "status": "manually_excluded", "snr_db": None, "error": None}
             for filename in sorted(excluded_frames)
             if filename in all_basenames
         ]

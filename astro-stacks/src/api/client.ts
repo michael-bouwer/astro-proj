@@ -132,7 +132,15 @@ export function previewUrl(
   params: { method: string; midtone: number; scale: number; target_bkg: number; shadow_clip: number },
   cacheBust: number,
   transform?: TransformParams,
-  effects?: EffectsParams
+  effects?: EffectsParams,
+  /**
+   * Longest-edge pixel budget for the rendered preview. Pass the size the
+   * image is actually displayed at -- the backend does all its work (stretch,
+   * effects, JPEG encode) at whatever size it's given, so asking for full
+   * sensor resolution to fill a ~700px box costs ~6x more for no visible
+   * benefit. Pass 0 for a true 1:1 render; omit to accept the backend default.
+   */
+  maxDimension?: number
 ): string {
   const query = new URLSearchParams({
     method: params.method,
@@ -160,6 +168,9 @@ export function previewUrl(
     query.set("noise_reduction", String(effects.noise_reduction));
     query.set("upscale", String(effects.upscale));
     query.set("sharpen", String(effects.sharpen));
+  }
+  if (maxDimension !== undefined) {
+    query.set("max_dimension", String(maxDimension));
   }
   return `${API_BASE}/workspaces/${workspaceId}/preview?${query.toString()}`;
 }

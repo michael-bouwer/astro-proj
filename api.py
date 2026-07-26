@@ -53,6 +53,15 @@ def _overall_percent(stage, percent):
 def _active_job():
     return next((j for j in jobs.values() if j["status"] in ("queued", "running")), None)
 
+
+# Previews are rendered at display resolution rather than full sensor
+# resolution. Everything /preview does -- the stretch above all, then the
+# effects, then the JPEG encode -- costs in proportion to pixel count, and at
+# 10 MP that was ~1.9 s and a 5.6 MB payload for an image shown in a ~700 px
+# box. The frontend overrides this per request from its actual canvas size, and
+# sends 0 for its 1:1 button; this default only applies to callers that don't.
+PREVIEW_MAX_DIMENSION = 1600
+
 # Primes psutil.cpu_percent's internal delta tracking at import time -- called
 # with interval=None (non-blocking), the first-ever call always returns a
 # meaningless 0.0 since there's no prior sample to diff against. The frontend
@@ -463,6 +472,7 @@ def workspace_preview(
     noise_reduction: float = 0.0,
     upscale: float = 1.0,
     sharpen: float = 0.0,
+    max_dimension: int = PREVIEW_MAX_DIMENSION,
 ):
     _workspace_or_404(workspace_id)
     master = loaded_masters.get(workspace_id)
@@ -473,6 +483,15 @@ def workspace_preview(
         transformed = transform.apply(master, rotation, _crop_rect(crop_x, crop_y, crop_width, crop_height))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Downscale before stretching, not after: the stretch is the single most
+    # expensive step here (two full-frame medians) and its cost is entirely a
+    # function of pixel count. effects.apply's own upscale step multiplies the
+    # size back up afterward, so aim the downscale at max_dimension/upscale to
+    # land at roughly max_dimension either way -- rather than encoding a 92 MP
+    # JPEG at 3x, or losing the upscale's softening from the preview entirely.
+    if max_dimension > 0:
+        transformed = transform.downscale_to_fit(transformed, round(max_dimension / max(upscale, 1.0)))
 
     preview_u8 = stretch.to_uint8(
         transformed, method=method, midtone=midtone, scale=scale, target_bkg=target_bkg, shadow_clip=shadow_clip

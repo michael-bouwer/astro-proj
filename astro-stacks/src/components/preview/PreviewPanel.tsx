@@ -25,6 +25,21 @@ const MODE_LABELS: { mode: PreviewMode; label: string }[] = [
   { mode: "compare", label: "Compare" },
 ];
 
+// The requested preview size is rounded up to a multiple of this, so nudging
+// the window (or dragging a panel divider) doesn't refetch the preview for
+// every pixel of resize.
+const PREVIEW_SIZE_QUANTUM = 256;
+// Upper bound on what "fit to window" will ask for. Past this the extra detail
+// isn't visible at fit scale, and inspecting detail is what 1:1 is for.
+const PREVIEW_SIZE_CAP = 2560;
+
+/** Longest-edge pixel budget for a preview filling a canvas of this size. */
+function previewBudgetFor(canvas: { width: number; height: number }): number {
+    const devicePixels = Math.max(canvas.width, canvas.height) * (window.devicePixelRatio || 1);
+    const bucketed = Math.ceil(devicePixels / PREVIEW_SIZE_QUANTUM) * PREVIEW_SIZE_QUANTUM;
+    return Math.min(PREVIEW_SIZE_CAP, Math.max(PREVIEW_SIZE_QUANTUM, bucketed));
+}
+
 export function PreviewPanel({
   workspaceId,
   masterLoaded,
@@ -77,10 +92,31 @@ export function PreviewPanel({
     if (cropEditing) setPreviewMode("after");
   }, [cropEditing]);
 
-  // Tracks the *effects-tab-triggered* preview re-fetch specifically (the
-  // "after" image's src is the only one that changes when effectsParams
-  // changes -- stretch/crop changes also refetch it, but only an
-  // effectsParams change should surface this indicator). Skips the initial
+  // Previews are normally rendered only as large as they're displayed (see
+  // client.ts's previewUrl). "1:1" opts out for judging things that depend on
+  // pixel scale -- noise reduction, star reduction, sharpen -- before export.
+  const [fullResolution, setFullResolution] = useState(false);
+  // The canvas's own available box, tracked so the requested preview size can
+  // follow it. Quantised in previewBudgetFor so resizing doesn't refetch
+  // constantly; null until first measured, in which case we just omit the
+  // parameter and take the backend default rather than flashing a tiny image.
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+    const measure = () => setCanvasSize({ width: canvasEl.clientWidth, height: canvasEl.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvasEl);
+    return () => observer.disconnect();
+  }, []);
+
+  const previewMaxDimension = fullResolution ? 0 : canvasSize ? previewBudgetFor(canvasSize) : undefined;
+
+  // Tracks a preview re-render the user explicitly asked for -- an Effects-tab
+  // change, or toggling 1:1 (which at full resolution is the slowest render
+  // the app does, so it especially wants feedback). Stretch/crop changes also
+  // refetch the image but deliberately don't raise this. Skips the initial
   // mount so opening a workspace doesn't show "Applying..." before anything's
   // actually been changed.
   const [effectsRequestState, setEffectsRequestState] = useState<"idle" | "loading" | "error">("idle");
@@ -91,7 +127,7 @@ export function PreviewPanel({
       return;
     }
     setEffectsRequestState("loading");
-  }, [effectsParams]);
+  }, [effectsParams, fullResolution]);
 
   const handleAfterLoad = (el: HTMLImageElement) => {
     setNaturalSize({ width: el.naturalWidth, height: el.naturalHeight });
@@ -139,13 +175,17 @@ export function PreviewPanel({
   // stay live either way, so brightness/contrast/etc. are still visible while
   // adjusting a crop.
   const effectiveTransform = cropEditing ? UNROTATED : transformParams;
-  const imageSrc = previewUrl(workspaceId, stretchParams, previewVersion, effectiveTransform, effectsParams);
+  const imageSrc = previewUrl(
+    workspaceId, stretchParams, previewVersion, effectiveTransform, effectsParams, previewMaxDimension,
+  );
   // Same frame, same stretch/crop, but with effects reset to their neutral
   // no-op values -- the "Before" reference for the Before/After/Compare
   // toggle below. Its own URL never changes on an effects-tab edit, so it
   // doesn't refetch (or trip the loading indicator) when you're just tuning
   // Effects sliders.
-  const beforeImageSrc = previewUrl(workspaceId, stretchParams, previewVersion, effectiveTransform, DEFAULT_EFFECTS_PARAMS);
+  const beforeImageSrc = previewUrl(
+    workspaceId, stretchParams, previewVersion, effectiveTransform, DEFAULT_EFFECTS_PARAMS, previewMaxDimension,
+  );
 
   // 100 = fully "after", 0 = fully "before" -- Compare's slider is just the
   // in-between of those same two endpoints, so all three modes share one
@@ -168,6 +208,30 @@ export function PreviewPanel({
                 {label}
               </Button>
             ))}
+          </div>
+          {/* Rendered as a segmented pair (rather than one toggle) so the
+              active option is highlighted the same way the mode buttons above
+              are -- which of the two you're in matters, since it changes how
+              the scale-dependent effects look. */}
+          <div className={styles.segmented}>
+            <Button
+              size="xs"
+              variant={fullResolution ? "outline" : "solid"}
+              colorPalette="brand"
+              onClick={() => setFullResolution(false)}
+              title="Render the preview at screen size. Much faster, but noise reduction, star reduction and sharpen are applied at that reduced scale, so they won't look exactly as they will on export."
+            >
+              Fit
+            </Button>
+            <Button
+              size="xs"
+              variant={fullResolution ? "solid" : "outline"}
+              colorPalette="brand"
+              onClick={() => setFullResolution(true)}
+              title="Render at full resolution. Slower, but noise reduction, star reduction and sharpen look exactly as they will on export -- use this to judge them before exporting."
+            >
+              1:1
+            </Button>
           </div>
         </div>
       )}

@@ -207,12 +207,21 @@ export type WorkspaceSettings = {
 
 // Per-light-frame outcome from the most recently completed pipeline run --
 // see pipeline/orchestrator.py's frame_quality return value.
-export type FrameQualityStatus = "included" | "quality_rejected" | "failed_to_align" | "manually_excluded";
+export type FrameQualityStatus =
+  | "included"
+  | "quality_rejected"
+  | "failed_to_align"
+  | "manually_excluded"
+  // The frame raised while being read/calibrated (corrupt file, unreadable
+  // disk, ...) rather than merely failing to register -- `error` carries the
+  // message. Distinct from failed_to_align because the fix is different.
+  | "error";
 
 export type FrameQualityEntry = {
   filename: string;
   status: FrameQualityStatus;
   snr_db: number | null;
+  error?: string | null;
 };
 
 export type SystemStats = {

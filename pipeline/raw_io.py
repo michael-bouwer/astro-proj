@@ -71,6 +71,26 @@ def load_frame(file_path, half_size=False):
     return bgr.astype(np.float32)
 
 
+def white_level_for(file_path):
+    """The value a fully-saturated pixel takes in whatever load_frame returns
+    for this file: 65535 for RAW (postprocessed at output_bps=16) and for
+    16-bit images, 255 for 8-bit ones.
+
+    load_frame deliberately preserves each source's own integer scale rather
+    than normalizing, so anything asking "is this channel pinned at
+    saturation?" has to be told where saturation actually is --
+    see calibration.clipped_channels, which otherwise silently never fires on
+    8-bit input because it assumed a 16-bit ceiling.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in RAW_EXTS:
+        return 65535
+    probe = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+    if probe is None:
+        raise ValueError(f"Could not read frame: {file_path}")
+    return 255 if probe.dtype == np.uint8 else 65535
+
+
 def load_quick_preview(file_path, max_dimension=900):
     """Fast, low-res decode for UI feedback (e.g. a blurred loading placeholder) --
     not used for the actual stacking pipeline, which needs full resolution.

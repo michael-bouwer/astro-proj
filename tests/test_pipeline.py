@@ -113,6 +113,93 @@ def test_color_calibrate_neutralizes_color_cast_without_zeroing_background():
     assert sky_median.min() > 1000
 
 
+def _with_black_border(frame, border):
+    """Places a frame inside a larger all-black canvas, returning the padded
+    frame plus the boolean coverage mask of the real pixels.
+
+    Padding rather than shifting/warping is deliberate: it reproduces exactly
+    the thing being tested (border fill polluting the sky sample) while leaving
+    the covered pixels *bit-identical* to the original. A real warp would also
+    push stars out of frame and resample the rest, so "the data is unchanged"
+    wouldn't hold at synthetic-test frame sizes and the assertions below
+    couldn't be tight.
+    """
+    height, width, channels = frame.shape
+    padded = np.zeros((height + 2 * border, width + 2 * border, channels), dtype=frame.dtype)
+    padded[border:border + height, border:border + width] = frame
+    coverage = np.zeros(padded.shape[:2], dtype=bool)
+    coverage[border:border + height, border:border + width] = True
+    return padded, coverage
+
+
+def test_estimate_snr_without_coverage_is_dragged_down_by_alignment_border():
+    """Documents *why* coverage is threaded through: the black border fill an
+    aligned frame carries lands in the sky sample and inflates its standard
+    deviation, so an otherwise-identical frame reads as noticeably noisier.
+
+    Uses a purpose-built frame with a *tight* sky rather than conftest's
+    make_light_frame, because the effect depends on the border being a distinct
+    second population. make_light_frame carries a strong vignette whose sky
+    already spans down toward zero, so exact-zero fill isn't an outlier there
+    and the bug doesn't reproduce -- on a real calibrated, gradient-removed
+    master (measured: 6.24 dB under-report at 7.5% border) it very much does.
+    """
+    rng = _rng()
+    frame = rng.normal(1500, 40, (200, 260, 3)).clip(0, None).astype(np.float32)
+    for row, col in ((40, 60), (120, 180), (160, 90)):
+        frame[row - 2:row + 3, col - 2:col + 3] = 30000.0
+
+    baseline = color.estimate_snr(frame)
+    padded, _coverage = _with_black_border(frame, 20)
+    assert color.estimate_snr(padded) < baseline - 5.0
+
+
+def test_estimate_snr_with_coverage_ignores_the_alignment_border():
+    rng = _rng()
+    frame = make_light_frame(rng).astype(np.float32)
+    baseline = color.estimate_snr(frame)
+
+    # Growing border, identical covered data -- the measured quality must stay
+    # put, otherwise compute_frame_weights under-weights (or outright rejects)
+    # frames purely for having needed a larger alignment shift. The covered
+    # pixels are bit-identical to the original here, so this is exact.
+    for border in (5, 20, 60):
+        padded, coverage = _with_black_border(frame, border)
+        assert color.estimate_snr(padded, coverage=coverage) == pytest.approx(baseline, abs=1e-6)
+
+
+def test_star_mask_coverage_excludes_border_from_the_percentile_cutoff():
+    rng = _rng()
+    frame = make_light_frame(rng).astype(np.float32)
+    padded, coverage = _with_black_border(frame, 40)
+
+    # Border zeros sit at the bottom of the distribution, so including them
+    # lowers the cutoff and lets ordinary sky qualify as "star".
+    assert color.star_mask(padded).sum() > color.star_mask(padded, coverage=coverage).sum()
+
+
+def test_star_mask_all_covered_matches_no_coverage_argument():
+    rng = _rng()
+    frame = make_light_frame(rng).astype(np.float32)
+    all_covered = np.ones(frame.shape[:2], dtype=bool)
+    assert np.array_equal(color.star_mask(frame), color.star_mask(frame, coverage=all_covered))
+
+
+def test_star_mask_empty_coverage_returns_an_empty_mask():
+    rng = _rng()
+    frame = make_light_frame(rng).astype(np.float32)
+    nothing_covered = np.zeros(frame.shape[:2], dtype=bool)
+    assert color.star_mask(frame, coverage=nothing_covered).sum() == 0
+
+
+def test_estimate_snr_subsample_tracks_the_full_resolution_estimate():
+    """Subsampling is only acceptable for per-frame weighting if it preserves
+    the value closely enough to rank frames the same way."""
+    rng = _rng()
+    frame = make_light_frame(rng).astype(np.float32)
+    assert abs(color.estimate_snr(frame, subsample=2) - color.estimate_snr(frame)) < 2.0
+
+
 def test_remove_background_gradient_flattens_a_directional_gradient():
     height, width = 200, 300
     img = np.full((height, width, 3), 700.0, dtype=np.float32)
@@ -466,6 +553,38 @@ def test_run_pipeline_excluded_frames_are_skipped_and_reported(synthetic_dataset
     assert by_filename["light_1.png"]["status"] == "included"
 
 
+def test_run_pipeline_reports_a_read_failure_as_error_not_failed_to_align(synthetic_dataset, monkeypatch):
+    """A frame that blows up while being read is a different problem from one
+    that simply wouldn't register, and the frame-review UI should say so --
+    otherwise a corrupt file reads as an alignment problem and sends you
+    looking in the wrong place."""
+    real_load_frame = raw_io.load_frame
+
+    def exploding_load_frame(path, *args, **kwargs):
+        if os.path.basename(path) == "light_3.png":
+            raise OSError("simulated unreadable file")
+        return real_load_frame(path, *args, **kwargs)
+
+    monkeypatch.setattr(orchestrator.raw_io, "load_frame", exploding_load_frame)
+    result = orchestrator.run_pipeline(str(synthetic_dataset))
+
+    entry = {e["filename"]: e for e in result["frame_quality"]}["light_3.png"]
+    assert entry["status"] == "error"
+    assert "simulated unreadable file" in entry["error"]
+    assert entry["snr_db"] is None
+    # Frames that succeed carry no error text.
+    assert {e["filename"]: e for e in result["frame_quality"]}["light_0.png"]["error"] is None
+
+
+def test_run_pipeline_reports_a_registration_failure_as_failed_to_align(synthetic_dataset, monkeypatch):
+    def never_aligns(self, target_bgr):
+        return None
+
+    monkeypatch.setattr(orchestrator.ReferenceFrame, "align", never_aligns)
+    with pytest.raises(RuntimeError, match="aligned successfully"):
+        orchestrator.run_pipeline(str(synthetic_dataset))
+
+
 def test_run_pipeline_raises_when_exclusion_leaves_too_few_frames(synthetic_dataset):
     with pytest.raises(ValueError, match="at least 2"):
         orchestrator.run_pipeline(str(synthetic_dataset), excluded_frames=["light_0.png", "light_1.png", "light_2.png"])
@@ -494,6 +613,60 @@ def test_run_pipeline_warns_on_a_saturated_flat_channel(tmp_path):
     for i in range(4):
         sy, sx = rng.integers(-6, 6), rng.integers(-6, 6)
         cv2.imwrite(str(tmp_path / "lights" / f"light_{i}.png"), make_light_frame(rng, sy, sx))
+
+    result = orchestrator.run_pipeline(str(tmp_path), apply_dark=True, apply_flat=True)
+
+    assert len(result["calibration_warnings"]) == 1
+    assert "flat" in result["calibration_warnings"][0]
+    assert "B" in result["calibration_warnings"][0]
+
+
+def test_clipped_channels_detects_saturation_in_an_8bit_frame():
+    """clipped_channels used to hardcode a 16-bit ceiling, so an 8-bit source
+    pinned at its own saturation point (255) never registered -- 255 is nowhere
+    near 65535, so the check silently always passed."""
+    frame = np.full((40, 40, 3), 100.0, dtype=np.float32)
+    frame[:, :, 0] = 255.0  # blue pinned at the 8-bit ceiling
+
+    assert calibration.clipped_channels(frame, clip_level=255) == ["B"]
+    # The old (default) 16-bit ceiling is what missed it.
+    assert calibration.clipped_channels(frame) == []
+
+
+def test_white_level_for_distinguishes_8bit_and_16bit_images(tmp_path):
+    eight = tmp_path / "eight.png"
+    sixteen = tmp_path / "sixteen.png"
+    cv2.imwrite(str(eight), np.full((8, 8, 3), 200, dtype=np.uint8))
+    cv2.imwrite(str(sixteen), np.full((8, 8, 3), 40000, dtype=np.uint16))
+
+    assert raw_io.white_level_for(str(eight)) == 255
+    assert raw_io.white_level_for(str(sixteen)) == 65535
+    # RAW is decided by extension -- it always decodes at output_bps=16.
+    assert raw_io.white_level_for("somewhere/IMG_0001.CR2") == 65535
+
+
+def test_run_pipeline_warns_on_a_saturated_flat_channel_in_an_8bit_dataset(tmp_path):
+    """End-to-end counterpart to the 16-bit warning test above: the same
+    saturated-blue flat, written as 8-bit, must still be reported."""
+    rng = _rng()
+    for sub in ("lights", "darks", "flats", "biases"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+
+    yy, xx = np.mgrid[0:HEIGHT, 0:WIDTH]
+    cy, cx = HEIGHT / 2, WIDTH / 2
+    vignette = 1.0 - 0.97 * (((yy - cy) ** 2 + (xx - cx) ** 2) / (cx**2 + cy**2))
+
+    for i in range(4):
+        cv2.imwrite(str(tmp_path / "biases" / f"bias_{i}.png"), (make_bias_frame(rng) // 257).astype(np.uint8))
+        cv2.imwrite(str(tmp_path / "darks" / f"dark_{i}.png"), (make_dark_frame(rng) // 257).astype(np.uint8))
+
+        flat = (200 * vignette)[:, :, None] * np.ones(3)
+        flat[:, :, 0] = 255.0
+        cv2.imwrite(str(tmp_path / "flats" / f"flat_{i}.png"), flat.clip(0, 255).astype(np.uint8))
+
+    for i in range(4):
+        sy, sx = rng.integers(-6, 6), rng.integers(-6, 6)
+        cv2.imwrite(str(tmp_path / "lights" / f"light_{i}.png"), (make_light_frame(rng, sy, sx) // 257).astype(np.uint8))
 
     result = orchestrator.run_pipeline(str(tmp_path), apply_dark=True, apply_flat=True)
 
@@ -657,6 +830,50 @@ def test_crop_raises_on_empty_rectangle():
     img = np.zeros((100, 100, 3), dtype=np.float32)
     with pytest.raises(ValueError, match="empty"):
         transform.crop(img, x=1.5, y=0, width=0.1, height=0.1)  # entirely outside bounds
+
+
+def test_downscale_to_fit_caps_the_longest_edge_and_keeps_aspect():
+    img = np.zeros((600, 900, 3), dtype=np.float32)
+    out = transform.downscale_to_fit(img, 300)
+    assert out.shape == (200, 300, 3)
+
+
+def test_downscale_to_fit_caps_the_longest_edge_when_portrait():
+    img = np.zeros((900, 600, 3), dtype=np.float32)
+    assert transform.downscale_to_fit(img, 300).shape == (300, 200, 3)
+
+
+def test_downscale_to_fit_never_upscales_a_smaller_image():
+    img = np.zeros((100, 120, 3), dtype=np.float32)
+    assert transform.downscale_to_fit(img, 4000) is img
+
+
+def test_downscale_to_fit_treats_zero_or_none_as_no_limit():
+    img = np.zeros((600, 900, 3), dtype=np.float32)
+    assert transform.downscale_to_fit(img, 0) is img
+    assert transform.downscale_to_fit(img, None) is img
+
+
+def test_downscale_to_fit_preserves_dtype_and_overall_level():
+    img = np.full((400, 800, 3), 1234.0, dtype=np.float32)
+    out = transform.downscale_to_fit(img, 200)
+    assert out.dtype == np.float32
+    # INTER_AREA averages, so a uniform image must survive unchanged in level.
+    assert out.mean() == pytest.approx(1234.0, rel=1e-4)
+
+
+def test_downscale_to_fit_then_effects_upscale_lands_near_the_budget():
+    """api.workspace_preview divides the downscale target by the upscale factor
+    so effects' own upscale brings it back to roughly the requested budget --
+    otherwise a 3x upscale would encode a preview ~9x larger than asked for."""
+    img = np.zeros((2602, 3908, 3), dtype=np.float32)
+    budget, upscale = 1600, 3.0
+
+    shrunk = transform.downscale_to_fit(img, round(budget / upscale))
+    stretched = stretch.to_uint8(shrunk)
+    final = effects.apply(stretched, upscale_factor=upscale)
+
+    assert max(final.shape[:2]) == pytest.approx(budget, abs=upscale)
 
 
 def test_apply_composes_rotate_then_crop():

@@ -9,6 +9,8 @@
 .modeBar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
   padding: 8px 16px 0;
   flex-shrink: 0;
 }

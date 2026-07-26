@@ -49,6 +49,39 @@ def rotate(bgr_f32, degrees):
     )
 
 
+def downscale_to_fit(bgr_f32, max_dimension):
+    """Shrinks an image so its longest edge is at most max_dimension, preserving
+    aspect ratio. Returns the input untouched if it already fits, or if
+    max_dimension is falsy/non-positive (the "no limit" case).
+
+    Only ever downscales -- a small image is never blown up to fill the limit.
+
+    INTER_AREA rather than INTER_LINEAR: it averages over the whole source
+    footprint of each destination pixel, so it doesn't alias away the
+    single-pixel stars that dominate this kind of image. Bilinear samples too
+    few source pixels when the scale factor is large and makes faint stars
+    flicker in and out depending on where the grid lands.
+
+    Used to render previews at display resolution instead of full sensor
+    resolution -- see api.workspace_preview, where the stretch alone cost
+    1255 ms on a 10 MP master versus 169 ms at 1600 px.
+    """
+    if not max_dimension or max_dimension <= 0:
+        return bgr_f32
+
+    height, width = bgr_f32.shape[:2]
+    longest = max(height, width)
+    if longest <= max_dimension:
+        return bgr_f32
+
+    scale = max_dimension / longest
+    return cv2.resize(
+        bgr_f32,
+        (max(1, round(width * scale)), max(1, round(height * scale))),
+        interpolation=cv2.INTER_AREA,
+    )
+
+
 def crop(bgr_f32, x, y, width, height):
     """x, y, width, height are normalized [0, 1] fractions of the image, so the
     same rect applies whether it was picked on a small preview JPEG or applied

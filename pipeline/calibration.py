@@ -90,13 +90,18 @@ def build_master_frame(frame_paths, progress_cb=None):
     return master
 
 
-CLIP_LEVEL = 65535  # raw_io.load_frame decodes at output_bps=16, so this is the sensor ceiling
+CLIP_LEVEL = 65535  # RAW decodes at output_bps=16, so this is the ceiling for raw sources
 CLIP_FRACTION_THRESHOLD = 0.5
 
 
 def clipped_channels(master_frame, clip_level=CLIP_LEVEL, fraction_threshold=CLIP_FRACTION_THRESHOLD):
     """Channel names (of "B", "G", "R") where at least fraction_threshold of a
     master calibration frame's pixels sit at/above clip_level.
+
+    clip_level must match the source files' actual white level -- pass
+    raw_io.white_level_for(path) rather than relying on the 16-bit default,
+    or 8-bit sources can never register as clipped (255 is nowhere near
+    65535, so the check silently always passes).
 
     A channel saturated like this carries no usable spatial detail -- for a
     flat in particular, that means its real vignette/falloff can never be

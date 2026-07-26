@@ -84,6 +84,16 @@
   color: var(--chakra-colors-fg-muted);
 }
 
+// Truncated to one line (full text in the title attribute) so a long traceback
+// message can't blow the row height out across the whole list.
+.itemError {
+  font-size: 0.68rem;
+  color: var(--chakra-colors-purple-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .footer {
   display: flex;
   align-items: center;
