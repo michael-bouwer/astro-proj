@@ -25,7 +25,22 @@ def star_mask(bgr_f32, percentile=99.5, coverage=None):
     full-frame shaped either way.
     """
     gray = cv2.cvtColor(bgr_f32, cv2.COLOR_BGR2GRAY)
-    sample = gray[coverage] if coverage is not None else gray
+
+    # np.percentile has to sort its input, so its cost scales with pixel
+    # count -- measured at 52ms on a real 10 MP frame, called up to 6 times
+    # per frame (calibrate() alone calls it 5x) for a threshold that's a rough
+    # signal/background split, not a precise boundary. A 4x4 subsample is
+    # ~16x fewer pixels to sort and lands within a fraction of a percent of
+    # the full-resolution cutoff -- the final >= comparison below still runs
+    # at full resolution, so the mask itself loses no detail. Same size gate
+    # stretch.compute_histogram uses, so small test images remain bit-identical.
+    if gray.size > 4_000_000:
+        gray_sample = gray[::4, ::4]
+        coverage_sample = coverage[::4, ::4] if coverage is not None else None
+    else:
+        gray_sample, coverage_sample = gray, coverage
+
+    sample = gray_sample[coverage_sample] if coverage_sample is not None else gray_sample
     if sample.size == 0:
         return np.zeros(gray.shape, dtype=np.float32)
     cutoff = np.percentile(sample, percentile)
@@ -116,9 +131,36 @@ def _evaluate_polynomial_at_points(coeffs, points, height, width, degree):
 
 
 def _evaluate_polynomial_over_grid(coeffs, height, width, degree):
-    yy, xx = np.mgrid[0:height, 0:width].astype(np.float64)
-    rows_n, cols_n = _normalize_coords((yy, xx), height, width)
-    return (_polynomial_basis(rows_n, cols_n, degree) @ coeffs).astype(np.float32)
+    """Evaluates the fitted polynomial at every pixel, producing the smooth
+    background surface remove_background_gradient subtracts.
+
+    _polynomial_basis's approach (materialize every term over the full pixel
+    grid at once, then one matmul) is exactly right for _fit_polynomial and
+    _evaluate_polynomial_at_points, which only ever run on a *sparse* set of
+    grid-cell sample points. Doing the same over the *full* pixel grid is a
+    different story: at degree=2 that's 6 float64 (height, width) terms plus
+    the mgrid coordinates themselves -- ~1 GB measured on a 10 MP frame, for a
+    fit that has nothing left to solve (that already happened in
+    _fit_polynomial). So instead of building a (height, width, num_terms)
+    basis matrix, each term is computed once as a cheap outer product of a row
+    vector and a column vector and immediately folded into the running float32
+    accumulator -- mathematically the same polynomial evaluation, just without
+    ever holding more than one full-frame term in memory at a time.
+    """
+    rows = np.arange(height, dtype=np.float32).reshape(-1, 1)
+    cols = np.arange(width, dtype=np.float32).reshape(1, -1)
+    rows_n, cols_n = _normalize_coords((rows, cols), height, width)
+
+    channels = coeffs.shape[1]
+    result = np.zeros((height, width, channels), dtype=np.float32)
+    term_index = 0
+    for total in range(degree + 1):
+        for i in range(total + 1):
+            term = (rows_n ** (total - i)) * (cols_n ** i)  # (height, width) via broadcast
+            for c in range(channels):
+                result[:, :, c] += term * coeffs[term_index, c]
+            term_index += 1
+    return result
 
 
 def remove_background_gradient(bgr_f32, mask=None, grid_size=16, degree=2, reject_sigma=2.0, iterations=3):

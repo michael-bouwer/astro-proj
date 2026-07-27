@@ -73,6 +73,16 @@ class ReferenceFrame:
         valid_mask is a boolean (height, width) array marking pixels that came
         from the source frame, as opposed to the black border fill the
         rotation/shift introduces wherever the warped frame doesn't reach.
+
+        Not perfectly reproducible run-to-run: astroalign.find_transform's
+        RANSAC step (astroalign.py's _ransac) shuffles its candidate matches
+        with a freshly-seeded, unseeded np.random.default_rng() every call, so
+        re-running the exact same pipeline on the exact same dataset can very
+        occasionally settle on a very slightly different transform for a
+        borderline frame (measured: ~0.05 dB mean SNR drift, one status flip
+        in 20 frames on a real dataset) -- an existing property of the
+        dependency, present long before and independent of any threading in
+        this codebase.
         """
         target_gray = cv2.normalize(
             cv2.cvtColor(target_bgr, cv2.COLOR_BGR2GRAY), None, 0, 255, cv2.NORM_MINMAX

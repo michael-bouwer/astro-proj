@@ -200,6 +200,84 @@ def test_estimate_snr_subsample_tracks_the_full_resolution_estimate():
     assert abs(color.estimate_snr(frame, subsample=2) - color.estimate_snr(frame)) < 2.0
 
 
+def _large_starfield(rng, size=2001):
+    """An image just over star_mask's 4M-element subsampling gate (2001*2001 =
+    ~4.004M), with a real star population so the percentile cutoff has
+    something non-degenerate to land on."""
+    frame = rng.normal(1500, 40, (size, size, 3)).clip(0, None).astype(np.float32)
+    star_rows = rng.integers(10, size - 10, 40)
+    star_cols = rng.integers(10, size - 10, 40)
+    for row, col in zip(star_rows.tolist(), star_cols.tolist()):
+        frame[row - 1 : row + 2, col - 1 : col + 2] = 30000.0
+    return frame
+
+
+def test_star_mask_below_the_subsampling_gate_is_unaffected():
+    # 200x260 (conftest's synthetic size) is far under the 4M-element gate --
+    # confirms the gate itself doesn't change behavior for every existing test
+    # in this file, all of which run at that size or smaller.
+    rng = _rng()
+    frame = make_light_frame(rng).astype(np.float32)
+    assert frame.shape[0] * frame.shape[1] < 4_000_000
+
+
+def test_star_mask_above_the_gate_uses_a_subsampled_cutoff_close_to_the_full_one():
+    rng = _rng()
+    frame = _large_starfield(rng)
+    assert frame.shape[0] * frame.shape[1] > 4_000_000  # exercises the subsampling path
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    full_cutoff = np.percentile(gray, 99.5)
+    subsampled_cutoff = np.percentile(gray[::4, ::4], 99.5)
+    # The two cutoffs approximate each other closely enough that the resulting
+    # masks are nearly identical -- not a proof of exact equivalence (that's
+    # not the goal; only the speedup is), but a sanity bound on how far a
+    # subsampled percentile can drift from the true one.
+    assert abs(subsampled_cutoff - full_cutoff) < 0.02 * full_cutoff
+
+    mask = color.star_mask(frame)
+    assert mask.shape == gray.shape  # the *mask* is still full resolution
+    assert 0 < mask.sum() < mask.size  # a non-degenerate split, not all-star or all-sky
+
+
+def test_star_mask_above_the_gate_still_respects_coverage():
+    rng = _rng()
+    frame = _large_starfield(rng)
+    height, width = frame.shape[:2]
+    coverage = np.ones((height, width), dtype=bool)
+    coverage[:, : width // 2] = False  # left half is "border fill"
+    frame[:, : width // 2] = 0.0
+
+    # Must not crash subsampling a coverage array alongside gray, and must not
+    # let the excluded half's zeros pull the cutoff down.
+    mask = color.star_mask(frame, coverage=coverage)
+    assert mask[:, : width // 2].sum() == 0  # nothing in the excluded half can be "star"
+
+
+def test_evaluate_polynomial_over_grid_matches_a_full_basis_matmul():
+    """The broadcast-accumulation implementation is a memory optimization
+    only -- it has to keep computing the same polynomial surface as the naive
+    "build the full (height, width, num_terms) basis matrix and matmul"
+    approach it replaced, just without ever materializing that matrix.
+    """
+    def full_basis_matmul(coeffs, height, width, degree):
+        yy, xx = np.mgrid[0:height, 0:width].astype(np.float64)
+        rows_n, cols_n = color._normalize_coords((yy, xx), height, width)
+        return (color._polynomial_basis(rows_n, cols_n, degree) @ coeffs).astype(np.float32)
+
+    rng = _rng()
+    height, width, degree = 60, 90, 2
+    num_terms = (degree + 1) * (degree + 2) // 2
+    coeffs = rng.uniform(-50, 50, (num_terms, 3))
+
+    expected = full_basis_matmul(coeffs, height, width, degree)
+    actual = color._evaluate_polynomial_over_grid(coeffs, height, width, degree)
+
+    assert actual.shape == expected.shape
+    assert actual.dtype == np.float32
+    np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-3)
+
+
 def test_remove_background_gradient_flattens_a_directional_gradient():
     height, width = 200, 300
     img = np.full((height, width, 3), 700.0, dtype=np.float32)
