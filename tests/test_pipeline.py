@@ -699,6 +699,19 @@ def test_run_pipeline_warns_on_a_saturated_flat_channel(tmp_path):
     assert "B" in result["calibration_warnings"][0]
 
 
+def test_run_pipeline_resource_warnings_is_empty_for_a_small_session(synthetic_dataset):
+    # The synthetic dataset is a handful of 200x260 frames -- nowhere near
+    # large enough relative to any real machine's RAM to trigger a warning.
+    result = orchestrator.run_pipeline(str(synthetic_dataset))
+    assert result["resource_warnings"] == []
+
+
+def test_run_pipeline_surfaces_a_memory_warning_when_one_fires(synthetic_dataset, monkeypatch):
+    monkeypatch.setattr(orchestrator, "memory_warning", lambda required_bytes: "simulated memory warning")
+    result = orchestrator.run_pipeline(str(synthetic_dataset))
+    assert result["resource_warnings"] == ["simulated memory warning"]
+
+
 def test_clipped_channels_detects_saturation_in_an_8bit_frame():
     """clipped_channels used to hardcode a 16-bit ceiling, so an 8-bit source
     pinned at its own saturation point (255) never registered -- 255 is nowhere

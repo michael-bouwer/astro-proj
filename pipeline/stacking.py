@@ -30,6 +30,7 @@ import tempfile
 import warnings
 
 import numpy as np
+import psutil
 
 # Where the memmap-backed stack files live. A full session is genuinely large
 # (measured: 17.7 GB for 134 frames, 27.8 GB for 210, at 3908x2602), and the
@@ -90,6 +91,32 @@ def check_temp_space(required_bytes, temp_dir=None, headroom=1.1):
             f"{free / 1e9:.1f} GB is available. Free up space, or set the "
             f"{STACK_TEMP_DIR_ENV} environment variable to a folder on a larger drive."
         )
+
+
+def memory_warning(required_bytes, total_ram_bytes=None, threshold=0.5):
+    """Advisory, not a hard block like check_temp_space: unlike disk space,
+    the OS can generally absorb a tight memory footprint via its own paging
+    -- a real 210-frame session (27.76 GB of scratch data) completed
+    successfully while briefly using 99% of a 33.5 GB machine's RAM, and
+    released it immediately once the run finished. That's not a leak, just a
+    session whose working set is large relative to the machine running it,
+    so this surfaces a message instead of raising: the run will very likely
+    still complete, but may run slowly or leave little headroom for
+    whatever else the user has open.
+
+    Returns None when required_bytes is comfortably under threshold fraction
+    of total_ram_bytes (defaults to the actual machine's RAM), else a
+    message naming both figures.
+    """
+    total_ram_bytes = total_ram_bytes or psutil.virtual_memory().total
+    if required_bytes <= threshold * total_ram_bytes:
+        return None
+    return (
+        f"This session's scratch data (~{required_bytes / 1e9:.1f} GB) is large relative "
+        f"to this machine's {total_ram_bytes / 1e9:.1f} GB of RAM. Stacking may run slowly "
+        f"or strain other running applications -- closing other programs during the run, "
+        f"or splitting a very large session into smaller ones, can help."
+    )
 
 
 def _auto_chunk_rows(frame_count, width, channels, budget_bytes=COMBINE_MEMORY_BUDGET_BYTES):

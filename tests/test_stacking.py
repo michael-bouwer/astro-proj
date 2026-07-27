@@ -11,6 +11,7 @@ from pipeline.stacking import (
     check_temp_space,
     compute_frame_weights,
     median_combine,
+    memory_warning,
     sigma_clip_combine,
     stack_bytes_required,
     stack_temp_dir,
@@ -280,3 +281,67 @@ def test_memmap_stacks_are_created_in_the_env_var_directory(tmp_path, monkeypatc
     finally:
         stacking.cleanup_memmap(mem_stack, mem_path)
         stacking.cleanup_memmap(coverage, coverage_path)
+
+
+# --- memory_warning ---------------------------------------------------------
+
+
+def _gb(n):
+    # Decimal GB, matching memory_warning's own /1e9 formatting -- 1024**3
+    # (GiB) would drift from the message's rendered figures.
+    return int(n * 1e9)
+
+
+def test_memory_warning_returns_none_comfortably_under_the_threshold():
+    # 1 GB required against 100 GB of RAM -- nowhere close to the 50% default.
+    assert memory_warning(_gb(1), total_ram_bytes=_gb(100)) is None
+
+
+def test_memory_warning_returns_a_message_over_the_threshold():
+    message = memory_warning(_gb(60), total_ram_bytes=_gb(100))
+    assert message is not None
+    assert "60.0 GB" in message
+    assert "100.0 GB" in message
+
+
+def test_memory_warning_is_exclusive_at_exactly_the_threshold():
+    # Exactly at threshold * total must not warn ("comfortably under" includes
+    # the boundary itself) -- only when required strictly exceeds it.
+    assert memory_warning(_gb(50), total_ram_bytes=_gb(100), threshold=0.5) is None
+    assert memory_warning(_gb(50) + 1, total_ram_bytes=_gb(100), threshold=0.5) is not None
+
+
+def test_memory_warning_respects_a_custom_threshold():
+    required = _gb(30)
+    total = _gb(100)
+    assert memory_warning(required, total_ram_bytes=total, threshold=0.5) is None
+    assert memory_warning(required, total_ram_bytes=total, threshold=0.2) is not None
+
+
+def test_memory_warning_defaults_to_the_real_machines_ram(monkeypatch):
+    """No total_ram_bytes given -- must fall back to psutil, not silently no-op."""
+    import psutil
+
+    class _FakeVM:
+        total = _gb(10)
+
+    monkeypatch.setattr(psutil, "virtual_memory", lambda: _FakeVM())
+    assert memory_warning(_gb(1)) is None  # 1 GB of 10 GB, under 50%
+    assert memory_warning(_gb(9)) is not None  # 9 GB of 10 GB, over 50%
+
+
+@pytest.mark.parametrize(
+    "label, frames, height, width, total_ram_gb, expect_warning",
+    [
+        # Measured this session against the real Heart Nebula frame size
+        # (3908x2602). Jellyfish (210 frames, 27.76 GB) on this machine's
+        # 33.5 GB peaked at 99% RAM -- should warn. A small synthetic session
+        # should not.
+        ("real Jellyfish session on the machine it was measured on", 210, 2602, 3908, 33.5, True),
+        ("small synthetic session", 4, 200, 260, 33.5, False),
+    ],
+)
+def test_memory_warning_against_real_measured_sessions(label, frames, height, width, total_ram_gb, expect_warning):
+    required = stack_bytes_required(frames, height, width, 3)
+    result = memory_warning(required, total_ram_bytes=total_ram_gb * 1024**3)
+    assert (result is not None) == expect_warning, label

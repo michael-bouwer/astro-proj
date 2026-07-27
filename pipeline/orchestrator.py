@@ -15,6 +15,7 @@ from .stacking import (
     create_coverage_stack,
     create_memmap_stack,
     median_combine,
+    memory_warning,
     sigma_clip_combine,
     stack_bytes_required,
     winsorized_sigma_clip_combine,
@@ -186,7 +187,17 @@ def run_pipeline(
     # way through a long session is a miserable way to find out. The reference
     # frame has to be decoded first only because that's what establishes the
     # frame dimensions this estimate needs.
-    check_temp_space(stack_bytes_required(len(light_files), height, width, 3))
+    required_bytes = stack_bytes_required(len(light_files), height, width, 3)
+    check_temp_space(required_bytes)
+    # A soft, informational counterpart to the hard check above: unlike disk
+    # space, the OS can generally absorb a tight RAM footprint via its own
+    # paging (a real 210-frame session ran to completion at 99% system
+    # memory, released cleanly right after), so this only ever warns, never
+    # blocks. See stacking.memory_warning.
+    resource_warnings = []
+    ram_note = memory_warning(required_bytes)
+    if ram_note:
+        resource_warnings.append(ram_note)
 
     mem_stack, temp_filepath = create_memmap_stack(len(light_files), height, width, 3)
     coverage_stack, coverage_temp_filepath = create_coverage_stack(len(light_files), height, width)
@@ -302,5 +313,6 @@ def run_pipeline(
         "width": width,
         "height": height,
         "calibration_warnings": calibration_warnings,
+        "resource_warnings": resource_warnings,
         "frame_quality": frame_quality,
     }

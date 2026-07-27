@@ -40,6 +40,15 @@ export function StatBar({ runResult }: { runResult: RunResult | null }) {
           ))}
         </div>
       )}
+      {runResult.resource_warnings.length > 0 && (
+        <div className={styles.warnings}>
+          {runResult.resource_warnings.map((warning) => (
+            <Text key={warning} className={styles.warning}>
+              ⚠ {warning}
+            </Text>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

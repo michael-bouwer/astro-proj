@@ -60,6 +60,11 @@ export type RunResult = {
   // completes, but calibration couldn't fully correct for it. See
   // pipeline/calibration.py's clipped_channels.
   calibration_warnings: string[];
+  // Non-fatal system-resource advisories (currently: scratch data large
+  // relative to this machine's RAM) -- the run still completes, but may have
+  // run slowly or left little headroom for other programs. See
+  // pipeline/stacking.py's memory_warning.
+  resource_warnings: string[];
 };
 
 export type JobStatusValue = "queued" | "running" | "done" | "error";
